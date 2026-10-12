@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - carry synchronized metadata into final variable nodes
  *
  */
 package org.eclipse.lsp.cobol.core.engine.processors;
@@ -280,6 +281,8 @@ public class SectionNodeProcessorHelper {
         Optional<ResultWithErrors<VariableNode>> convertResult = convert(definitionNode);
         if (convertResult.isPresent()) {
           VariableNode variable = convertResult.get().unwrap(errors::addAll);
+          variable.setSynchronizedClause(definitionNode.isSynchronizedClause());
+          variable.setSynchronizedDirection(definitionNode.getSynchronizedDirection());
           lastVariableOnTheLevel = variable;
           rootNode.addChild(variable);
           // Reassign all children from definition node to converted variable definition node

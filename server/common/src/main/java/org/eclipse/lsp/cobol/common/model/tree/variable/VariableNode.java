@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - expose synchronized clause metadata on variables
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree.variable;
@@ -55,6 +56,8 @@ public abstract class VariableNode extends Node implements DefinedAndUsedStructu
   private final VariableType variableType;
   private final String name;
   @Setter private boolean global;
+  @Setter private boolean synchronizedClause;
+  @Setter private String synchronizedDirection;
 
   @Getter(AccessLevel.NONE)
   @EqualsAndHashCode.Exclude

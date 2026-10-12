@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - preserve synchronized clause metadata
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree.variable;
@@ -60,6 +61,8 @@ public final class VariableDefinitionNode extends Node {
   private final boolean isDynamicLength;
   private final boolean isJustified;
   private final boolean isUnBounded;
+  @Setter private boolean synchronizedClause;
+  @Setter private String synchronizedDirection;
 
   private VariableDefinitionNode(
       Locality location,
@@ -361,6 +364,8 @@ public final class VariableDefinitionNode extends Node {
     boolean isJustified;
     boolean isUnBounded;
     boolean isExternal;
+    boolean synchronizedClause;
+    String synchronizedDirection;
 
     private Builder() {}
 
@@ -370,30 +375,34 @@ public final class VariableDefinitionNode extends Node {
      * @return the VariableDefinitionNode
      */
     public VariableDefinitionNode build() {
-      return new VariableDefinitionNode(
-          statementLocality,
-          level,
-          variableNameAndLocality,
-          global,
-          picClauses,
-          occursClauses,
-          valueClauses,
-          usageClauses,
-          redefinesClauses,
-          renamesClause,
-          renamesThruClause,
-          systemName,
-          levelLocality,
-          blankWhenZero,
-          signClause,
-          valueToken,
-          fileDescriptor,
-          fileControlClause,
-          isSortDescription,
-          isDynamicLength,
-          isJustified,
-          isUnBounded,
-          isExternal);
+      VariableDefinitionNode node =
+          new VariableDefinitionNode(
+              statementLocality,
+              level,
+              variableNameAndLocality,
+              global,
+              picClauses,
+              occursClauses,
+              valueClauses,
+              usageClauses,
+              redefinesClauses,
+              renamesClause,
+              renamesThruClause,
+              systemName,
+              levelLocality,
+              blankWhenZero,
+              signClause,
+              valueToken,
+              fileDescriptor,
+              fileControlClause,
+              isSortDescription,
+              isDynamicLength,
+              isJustified,
+              isUnBounded,
+              isExternal);
+      node.setSynchronizedClause(synchronizedClause);
+      node.setSynchronizedDirection(synchronizedDirection);
+      return node;
     }
   }
 }
