@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - preserve RETURN command metadata
  *
  */
 
@@ -26,6 +27,8 @@ import org.eclipse.lsp.cobol.implicitDialects.cics.CICSDialect;
 @ToString(callSuper = true)
 @EqualsAndHashCode(callSuper = true)
 public class ExecCicsReturnNode extends Node {
+  @lombok.Getter @lombok.Setter private String command;
+  @lombok.Getter @lombok.Setter private java.util.List<ExecCicsNode.Option> options;
 
   public ExecCicsReturnNode(Locality location) {
     super(location, NodeType.STATEMENT, CICSDialect.DIALECT_NAME);
