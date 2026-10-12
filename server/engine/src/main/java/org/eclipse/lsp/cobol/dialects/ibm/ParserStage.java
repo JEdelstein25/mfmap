@@ -10,11 +10,13 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - preserve recognized EXEC DLI statements in the dialect tree
  *
  */
 package org.eclipse.lsp.cobol.dialects.ibm;
 
 import com.google.common.collect.ImmutableList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,8 @@ import org.eclipse.lsp.cobol.common.error.SyntaxError;
 import org.eclipse.lsp.cobol.common.mapping.OriginalLocation;
 import org.eclipse.lsp.cobol.common.message.MessageService;
 import org.eclipse.lsp.cobol.common.message.MessageTemplate;
+import org.eclipse.lsp.cobol.common.model.Locality;
+import org.eclipse.lsp.cobol.common.model.tree.ExecDliNode;
 import org.eclipse.lsp.cobol.common.model.tree.Node;
 import org.eclipse.lsp.cobol.common.pipeline.Stage;
 import org.eclipse.lsp.cobol.common.pipeline.StageResult;
@@ -94,10 +98,51 @@ public class ParserStage implements Stage<AnalysisContext, ParserStageResult, Di
 
   private static void appendUnknownExecDiags(
       AnalysisContext context, CommonTokenStream tokenStream) {
-    tokenStream.getTokens().stream()
-        .filter(ParserStage::unknownExecToken)
-        .map(t -> unknownExecMessage(context, t, tokenStream))
-        .forEach(context.getAccumulatedErrors()::add);
+    List<Node> dialectNodes = new ArrayList<>(context.getDialectNodes());
+    for (Token token : tokenStream.getTokens()) {
+      if (!unknownExecToken(token)) continue;
+      Location location =
+          context.getExtendedDocument().mapLocation(constructMultiLineRange(token, tokenStream));
+      Locality locality =
+          Locality.builder()
+              .uri(location.getUri())
+              .range(location.getRange())
+              .copybookId(context.getCopybooksRepository().getCopybookIdByUri(location.getUri()))
+              .build();
+      ExecDliNode dli =
+          token.getChannel() == CobolLexer.HIDDEN
+              ? DliParser.parse(
+                  token.getText(),
+                  locality,
+                  (start, end) -> dliLocality(context, token, start, end))
+              : null;
+      if (dli != null) dialectNodes.add(dli);
+      else context.getAccumulatedErrors().add(unknownExecMessage(context, token, tokenStream));
+    }
+    context.setDialectNodes(dialectNodes);
+  }
+
+  private static Locality dliLocality(AnalysisContext context, Token token, int start, int end) {
+    Position from = tokenPosition(token, start);
+    Position to = tokenPosition(token, end);
+    Location mapped = context.getExtendedDocument().mapLocation(new Range(from, to));
+    return Locality.builder()
+        .uri(mapped.getUri())
+        .range(mapped.getRange())
+        .copybookId(context.getCopybooksRepository().getCopybookIdByUri(mapped.getUri()))
+        .build();
+  }
+
+  private static Position tokenPosition(Token token, int offset) {
+    int line = token.getLine() - 1;
+    int column = token.getCharPositionInLine();
+    for (int i = 0; i < offset; i++) {
+      if (token.getText().charAt(i) == '\n') {
+        line++;
+        column = 0;
+      } else column++;
+    }
+    return new Position(line, column);
   }
 
   private static boolean unknownExecToken(Token t) {
