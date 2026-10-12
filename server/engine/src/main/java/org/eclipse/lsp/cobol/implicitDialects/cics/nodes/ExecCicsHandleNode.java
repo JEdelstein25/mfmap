@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - preserve HANDLE command metadata
  *
  */
 
@@ -27,6 +28,8 @@ import org.eclipse.lsp.cobol.implicitDialects.cics.CICSDialect;
 @ToString(callSuper = true)
 @EqualsAndHashCode(callSuper = true)
 public class ExecCicsHandleNode extends Node {
+  @Getter @lombok.Setter private String command;
+  @Getter @lombok.Setter private java.util.List<ExecCicsNode.Option> options;
 
   /** Handle Abend Type Enum */
   public enum HandleAbendType {

@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - attach metadata to every CICS statement
  *
  */
 
@@ -239,6 +240,26 @@ class CICSVisitor extends CICSParserBaseVisitor<List<Node>> {
 
   private List<Node> addTreeNode(ParserRuleContext ctx, Function<Locality, Node> nodeConstructor) {
     Node node = nodeConstructor.apply(getOriginalLocality(ctx));
+    if (ctx instanceof CICSParser.CicsExecBlockContext) {
+      CICSParser.CicsExecBlockContext block = (CICSParser.CicsExecBlockContext) ctx;
+      if (!block.allCicsRule().isEmpty()) {
+        ExecCicsNode metadata =
+            node instanceof ExecCicsNode
+                ? (ExecCicsNode) node
+                : new ExecCicsNode(node.getLocality());
+        metadata.describe(block.allCicsRule(0));
+        if (node instanceof ExecCicsReturnNode) {
+          ((ExecCicsReturnNode) node).setCommand(metadata.getCommand());
+          ((ExecCicsReturnNode) node).setOptions(metadata.getOptions());
+        } else if (node instanceof ExecCicsHandleNode) {
+          ((ExecCicsHandleNode) node).setCommand(metadata.getCommand());
+          ((ExecCicsHandleNode) node).setOptions(metadata.getOptions());
+        } else if (node instanceof ExecCicsAbendNode) {
+          ((ExecCicsAbendNode) node).setCommand(metadata.getCommand());
+          ((ExecCicsAbendNode) node).setOptions(metadata.getOptions());
+        }
+      }
+    }
     visitChildren(ctx).forEach(node::addChild);
     return ImmutableList.of(node);
   }
