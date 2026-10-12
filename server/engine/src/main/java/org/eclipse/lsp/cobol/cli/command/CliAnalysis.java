@@ -10,11 +10,13 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - select AST snapshots and compact node references
  *
  */
 package org.eclipse.lsp.cobol.cli.command;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -69,6 +71,33 @@ public class CliAnalysis implements Callable<Integer> {
       names = {"--ast"})
   private boolean printTree = false;
 
+  @CommandLine.Option(
+      names = "--ast-phase",
+      defaultValue = "ALL",
+      description =
+          "AST snapshots: ${COMPLETION-CANDIDATES}. FINAL selects the last available snapshot.")
+  private AstPhase astPhase = AstPhase.ALL;
+
+  @CommandLine.Option(
+      names = "--ast-compact-references",
+      description =
+          "Emit node references with only nodeType, name and locality; preserve children.")
+  private boolean compactReferences;
+
+  /** Snapshot selection in processing order. */
+  public enum AstPhase {
+    ALL,
+    FINAL,
+    START,
+    TRANSFORMATION,
+    DEFINITION,
+    POST_DEFINITION,
+    PRE_USAGE,
+    USAGE,
+    ENRICHMENT,
+    VALIDATION
+  }
+
   @CommandLine.ArgGroup(exclusive = false)
   private ExtendedSourceConfig extendedSourceConfig = new ExtendedSourceConfig();
 
@@ -114,6 +143,26 @@ public class CliAnalysis implements Callable<Integer> {
             asts.add(phase.name(), analysisResult.ctx.getAstChanges().get(phase));
           }
 
+          if (astPhase != AstPhase.ALL) {
+            String selected = astPhase.name();
+            if (astPhase == AstPhase.FINAL) {
+              selected = "START";
+              for (ProcessingPhase phase : ProcessingPhase.values()) {
+                if (!asts.get(phase.name()).isJsonNull()) {
+                  selected = phase.name();
+                }
+              }
+            }
+            JsonObject snapshot = new JsonObject();
+            snapshot.add(selected, asts.get(selected));
+            asts = snapshot;
+          }
+          if (compactReferences) {
+            for (String phase : asts.keySet()) {
+              asts.add(phase, compactNodeReferences(asts.get(phase), false));
+            }
+          }
+
           result.add("asts", asts);
         }
 
@@ -142,6 +191,35 @@ public class CliAnalysis implements Callable<Integer> {
         "uri", (inputConfig.useStdin) ? "N/A (User Input)" : inputConfig.src.toURI().toString());
     result.addProperty("language", dialect.getId());
 
+    return result;
+  }
+
+  private static JsonElement compactNodeReferences(JsonElement element, boolean reference) {
+    if (element.isJsonArray()) {
+      JsonArray result = new JsonArray();
+      element.getAsJsonArray().forEach(item -> result.add(compactNodeReferences(item, reference)));
+      return result;
+    }
+    if (!element.isJsonObject()) {
+      return element;
+    }
+    JsonObject object = element.getAsJsonObject();
+    JsonObject result = new JsonObject();
+    if (reference && object.has("nodeType")) {
+      for (String key : Arrays.asList("nodeType", "name", "locality")) {
+        if (object.has(key)) {
+          result.add(key, object.get(key));
+        }
+      }
+    } else {
+      object
+          .entrySet()
+          .forEach(
+              entry ->
+                  result.add(
+                      entry.getKey(),
+                      compactNodeReferences(entry.getValue(), !"children".equals(entry.getKey()))));
+    }
     return result;
   }
 
@@ -217,7 +295,7 @@ public class CliAnalysis implements Callable<Integer> {
   static class ExplicitConfig {
     @CommandLine.Option(
         names = {"-cf", "--copybook-folder"},
-        description = "Path to the copybook folder.")
+        description = "Copybook folder. Relative paths resolve from the current working directory.")
     private File[] cpyPaths = {};
 
     @CommandLine.Option(

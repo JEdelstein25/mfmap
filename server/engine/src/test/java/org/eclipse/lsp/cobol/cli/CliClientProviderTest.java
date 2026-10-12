@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - verify headless callback and copybook defaults
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -36,6 +37,37 @@ import org.mockito.MockedStatic;
 class CliClientProviderTest {
 
   private static final String COBOL_FILE_URI = Paths.get("COBPGM", "COOL").toUri().toString();
+
+  @Test
+  void headlessClientDefaultsAndCallbacks() {
+    CobolLanguageClient client = new CliClientProvider().get();
+    assertNull(client.resolveCopybookUri(COBOL_FILE_URI, "MISSING", "COBOL").join());
+    assertEquals(Collections.emptyList(), client.availableDialects().join());
+    assertNull(client.showMessageRequest(null).join());
+    assertNull(client.configuration(null).join());
+    assertNull(client.resolveSubroutine("SUBPROGRAM").join());
+    assertNull(client.getFileContent("file:///missing").join());
+    assertNull(client.downloadCopybooks(COBOL_FILE_URI, Collections.emptyList(), true).join());
+    assertNull(client.processDialect("COBOL", COBOL_FILE_URI, "").join());
+    assertEquals(false, client.applyEdit(null).join().isApplied());
+    assertEquals(false, client.showDocument(null).join().isSuccess());
+    assertEquals(Collections.emptyList(), client.workspaceFolders().join());
+    assertNull(client.registerCapability(null).join());
+    assertNull(client.unregisterCapability(null).join());
+    assertNull(client.createProgress(null).join());
+    assertNull(client.refreshSemanticTokens().join());
+    assertNull(client.refreshCodeLenses().join());
+    assertNull(client.refreshInlayHints().join());
+    assertNull(client.refreshInlineValues().join());
+    assertNull(client.refreshDiagnostics().join());
+    client.telemetryEvent(null);
+    client.publishDiagnostics(null);
+    client.showMessage(null);
+    client.logMessage(null);
+    client.cfastReady(null);
+    client.notifyProgress(null);
+    client.logTrace(null);
+  }
 
   @Test
   void relativeCopybookFolderIsResolvedAgainstCurrentWorkingDirectory() {
