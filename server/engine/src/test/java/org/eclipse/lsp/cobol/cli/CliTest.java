@@ -10,7 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
- *    Amp - verify AST selection, compact references, graph output and CFAST
+ *    Amp - verify AST selection, compact references, graph output, the graph command and CFAST
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -60,6 +60,10 @@ class CliTest {
           + "  analysis        analyse cobol source"
           + System.lineSeparator()
           + "  cfast           generate cfast from cobol source"
+          + System.lineSeparator()
+          + "  graph           print graph output for each program path read from stdin, one"
+          + System.lineSeparator()
+          + "                    JSON per line"
           + System.lineSeparator();
 
   @Test
@@ -88,7 +92,8 @@ class CliTest {
   void testCliCommands() {
     CommandLine commandLine = new CommandLine(new Cli());
     Set<String> commandList = commandLine.getSubcommands().keySet();
-    assertEquals(4, commandList.size());
+    assertEquals(5, commandList.size());
+    assertTrue(commandList.contains("graph"));
     assertTrue(commandList.contains("analysis"));
     assertTrue(commandList.contains("list_copybooks"));
     assertTrue(commandList.contains("list_sources"));
@@ -222,6 +227,42 @@ class CliTest {
             .getAsJsonObject("asts")
             .getAsJsonObject("VALIDATION");
     assertSameTree(last, output.getAsJsonObject("tree"));
+  }
+
+  @Test
+  void graphCommandServesManyProgramsWithTheSameOutputAsAnalysis(@TempDir Path directory)
+      throws Exception {
+    Path first = directory.resolve("FIRST.cbl");
+    Path second = directory.resolve("SECOND.cbl");
+    Files.write(
+        first,
+        ("       IDENTIFICATION DIVISION.\n       PROGRAM-ID. FIRST.\n"
+                + "       PROCEDURE DIVISION.\n           CALL 'SECOND'.\n           GOBACK.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    Files.write(
+        second,
+        ("       IDENTIFICATION DIVISION.\n       PROGRAM-ID. SECOND.\n"
+                + "       PROCEDURE DIVISION.\n           DISPLAY UNDEF-Y.\n           GOBACK.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    PrintStream originalOut = System.out;
+    java.io.InputStream originalIn = System.in;
+    try (PrintStream stream = new PrintStream(output)) {
+      System.setOut(stream);
+      System.setIn(
+          new java.io.ByteArrayInputStream(
+              (first + "\n\n" + second + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+      assertEquals(0, new CommandLine(new Cli()).execute("graph"));
+    } finally {
+      System.setOut(originalOut);
+      System.setIn(originalIn);
+    }
+    String[] lines = output.toString().trim().split("\n");
+    assertEquals(2, lines.length);
+    assertEquals(
+        run("analysis", "-s", first.toString(), "--graph"), JsonParser.parseString(lines[0]));
+    assertEquals(
+        run("analysis", "-s", second.toString(), "--graph"), JsonParser.parseString(lines[1]));
   }
 
   private static void collectNodes(JsonObject node, java.util.Map<String, JsonObject> nodes) {

@@ -14,19 +14,20 @@ copybooks, parser and options are unchanged since its last parse is not parsed a
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import json
 import os
 import sqlite3
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-from .crosscheck import PATTERNS, TextScan, crosscheck
+from .crosscheck import PATTERNS, TextScan, graph_counts
 from .model import Project, SourceFile, call_edges, data_access
-from .run import output_names, parse_one, parser_options
+from .run import GraphWorker, output_names, parse_one, parser_options
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS files (
   path TEXT PRIMARY KEY, graph TEXT, status TEXT, errors INTEGER, warnings INTEGER,
   message TEXT, run_id INTEGER, parsed REAL, seconds REAL, cache_key TEXT, deps TEXT,
-  copies TEXT);
+  copies TEXT, counts TEXT);
 CREATE TABLE IF NOT EXISTS run_files (
   run_id INTEGER, path TEXT, status TEXT, errors INTEGER, cached INTEGER, seconds REAL,
   PRIMARY KEY (run_id, path));
@@ -71,6 +72,8 @@ def connect(store: str | os.PathLike) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    if "counts" not in {r["name"] for r in conn.execute("PRAGMA table_info(files)")}:
+        conn.execute("ALTER TABLE files ADD COLUMN counts TEXT")  # stores made before 0.1.1
     return conn
 
 
@@ -108,42 +111,79 @@ def cache_key(source_hash, parser, deps) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def ingest(conn: sqlite3.Connection, path: str, graph: SourceFile) -> None:
-    """Replace a file's rows with what its graph contains."""
-    for table in PER_FILE_TABLES:
-        conn.execute(f"DELETE FROM {table} WHERE file = ?", (path,))
+def rows(path: str, graph: SourceFile) -> dict[str, list[tuple]]:
+    """A file's rows for the per-file tables."""
+    out: dict[str, list[tuple]] = {table: [] for table in PER_FILE_TABLES}
     for d in graph.diagnostics:
         location = (d.get("location") or {}).get("location") or {}
         start = (location.get("range") or {}).get("start") or {}
-        conn.execute(
-            "INSERT INTO diagnostics VALUES (?, ?, ?, ?, ?, ?)",
+        out["diagnostics"].append(
             (path, d.get("severity"), d.get("code"), d.get("message") or d.get("suggestion"),
              graph._path(location.get("uri", "")), start.get("line", -1) + 1))
     for p in graph.programs:
-        conn.execute(
-            "INSERT INTO programs VALUES (?, ?, ?, ?, ?, ?)",
+        out["programs"].append(
             (path, p.name, len(p.paragraphs), len(p.statements), len(p.all_data_items),
              json.dumps(sorted(set(p.copybooks)))))
         for e in call_edges(p):
             loc = e.statement.location
-            conn.execute(
-                "INSERT INTO calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            out["calls"].append(
                 (path, p.name, e.statement.paragraph.name if e.statement.paragraph else None,
                  e.via, e.target, e.resolved, e.expression, json.dumps(list(e.candidates)),
                  loc.path if loc else None, loc.line if loc else None))
         for a in data_access(p):
             loc = a.statement.location
-            conn.execute(
-                "INSERT INTO access VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            out["access"].append(
                 (path, p.name, a.paragraph.name if a.paragraph else None, a.store, a.resource,
                  a.mode, a.resolved, a.expression, a.statement.verb,
                  loc.path if loc else None, loc.line if loc else None))
         for f in p.files:
             loc = f.location
-            conn.execute(
-                "INSERT INTO file_controls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            out["file_controls"].append(
                 (path, p.name, f.name, f.assign, f.organization, f.access_mode, f.record_key,
                  loc.path if loc else None, loc.line if loc else None))
+    return out
+
+
+def write_rows(conn: sqlite3.Connection, path: str, table_rows: dict[str, list[tuple]]) -> None:
+    """Replace a file's rows in the per-file tables."""
+    for table in PER_FILE_TABLES:
+        conn.execute(f"DELETE FROM {table} WHERE file = ?", (path,))
+        if table_rows[table]:
+            marks = ", ".join("?" * len(table_rows[table][0]))
+            conn.executemany(f"INSERT INTO {table} VALUES ({marks})", table_rows[table])
+
+
+def ingest(conn: sqlite3.Connection, path: str, graph: SourceFile) -> None:
+    """Replace a file's rows with what its graph contains."""
+    write_rows(conn, path, rows(path, graph))
+
+
+_scans: dict = {}
+
+
+def analyze(path: str, graph_path: str, source_hash, parser, dirs: Sequence[str],
+            extensions: Sequence[str], scan_enabled: bool) -> dict:
+    """Everything the store records about one parsed file. Runs in a separate process so the
+    JSON decoding and model building of many files proceed in parallel."""
+    graph = SourceFile(json.loads(Path(graph_path).read_text(encoding="utf-8")))
+    errors = len(graph.errors)
+    deps, copies = dependencies(graph)
+    scan = None
+    if scan_enabled and not graph.crash:
+        scan = _scans.setdefault((tuple(dirs), tuple(extensions)), TextScan(dirs, extensions))
+    return {
+        "rows": rows(path, graph),
+        "errors": errors,
+        "warnings": sum(d.get("severity") == "WARNING" for d in graph.diagnostics),
+        "status": "crash" if graph.crash else "errors" if errors else "clean",
+        "crash": graph.crash,
+        "key": cache_key(source_hash, parser, deps) if not graph.crash else None,
+        "deps": deps,
+        "copies": copies,
+        # Statement counts from the graph and from a text scan, for the count check.
+        "counts": {"graph": dict(sum((graph_counts(p) for p in graph.programs), collections.Counter())),
+                   "text": dict(scan.counts(Path(path))) if scan else None},
+    }
 
 
 def parse(
@@ -165,6 +205,7 @@ def parse(
     extensions = ["", *[e if e.startswith(".") else "." + e for e in copybook_extensions]] \
         if copybook_extensions else ["", ".cpy"]
     parser = sha256(jar)
+    scan = TextScan(dirs, extensions) if copybook_dirs else None
     names = output_names(list(sources))
     with conn:
         run_id = conn.execute(
@@ -200,38 +241,59 @@ def parse(
         todo.append((source, path, graph, source_hash))
 
     lock = threading.Lock()  # the connection is shared with the worker threads
+    local, workers = threading.local(), []  # one parser process per thread, reused for its files
 
     def work(item):
-        source, path, graph, _ = item
+        source, path, graph, source_hash = item
         with lock, conn:
             conn.execute("UPDATE files SET status = 'parsing' WHERE path = ?", (path,))
+        if not hasattr(local, "worker"):
+            local.worker = GraphWorker(jar, options)
+            with lock:
+                workers.append(local.worker)
         started = time.time()
-        data = parse_one(jar, source, graph, options)
-        return item, data, time.time() - started
+        parse_one(jar, source, graph, options, worker=local.worker)
+        seconds = time.time() - started
+        result = analyses.submit(analyze, path, str(graph), source_hash, parser, dirs, extensions,
+                                 scan is not None).result()
+        return item, result, seconds
 
-    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-        for future in as_completed([pool.submit(work, item) for item in todo]):
-            (source, path, graph_path, source_hash), data, seconds = future.result()
-            graph = SourceFile(data)
-            errors = len(graph.errors)
-            warnings = sum(d.get("severity") == "WARNING" for d in graph.diagnostics)
-            status = "crash" if graph.crash else "errors" if errors else "clean"
-            deps, copies = dependencies(graph)
-            key = cache_key(source_hash, parser, deps) if not graph.crash else None
-            with lock, conn:
-                ingest(conn, path, graph)
-                conn.execute(
-                    "UPDATE files SET graph = ?, status = ?, errors = ?, warnings = ?, message = ?, "
-                    "parsed = ?, seconds = ?, cache_key = ?, deps = ?, copies = ? WHERE path = ?",
-                    (str(graph_path), status, errors, warnings, graph.crash, time.time(), seconds,
-                     key, json.dumps(deps), json.dumps(copies), path))
-                conn.execute("INSERT INTO run_files VALUES (?, ?, ?, ?, 0, ?)",
-                             (run_id, path, status, errors, seconds))
-            if progress:
-                progress(path, status)
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool, \
+                ProcessPoolExecutor(max_workers=max(1, jobs)) as analyses:
+            for future in as_completed([pool.submit(work, item) for item in todo]):
+                (source, path, graph_path, source_hash), r, seconds = future.result()
+                with lock, conn:
+                    write_rows(conn, path, r["rows"])
+                    conn.execute(
+                        "UPDATE files SET graph = ?, status = ?, errors = ?, warnings = ?, message = ?, "
+                        "parsed = ?, seconds = ?, cache_key = ?, deps = ?, copies = ?, counts = ? "
+                        "WHERE path = ?",
+                        (str(graph_path), r["status"], r["errors"], r["warnings"], r["crash"],
+                         time.time(), seconds, r["key"], json.dumps(r["deps"]), json.dumps(r["copies"]),
+                         json.dumps(r["counts"]), path))
+                    conn.execute("INSERT INTO run_files VALUES (?, ?, ?, ?, 0, ?)",
+                                 (run_id, path, r["status"], r["errors"], seconds))
+                if progress:
+                    progress(path, r["status"])
+    finally:
+        for worker in workers:
+            worker.close()
 
-    if copybook_dirs:
-        text, graph, differences = crosscheck(load_project(store), TextScan(dirs, extensions))
+    if scan:
+        # Sum the per-file counts of this run's files; reused files keep their earlier counts.
+        text, graph, differences = collections.Counter(), collections.Counter(), {}
+        for row in latest_files(conn):
+            counts = json.loads(row["counts"] or "null")
+            if not counts or counts.get("text") is None:
+                continue
+            text.update(counts["text"])
+            graph.update(counts["graph"])
+            names = [p["name"] for p in conn.execute("SELECT name FROM programs WHERE file = ?", (row["path"],))]
+            for kind in PATTERNS:
+                t, g = counts["text"].get(kind, 0), counts["graph"].get(kind, 0)
+                if t != g:
+                    differences.setdefault(", ".join(names) or os.path.basename(row["path"]), {})[kind] = (t, g)
         with conn:
             for kind in PATTERNS:
                 diff = {n: d[kind] for n, d in differences.items() if kind in d}

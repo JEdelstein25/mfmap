@@ -246,7 +246,7 @@ public class CliAnalysis implements Callable<Integer> {
     return result;
   }
 
-  private void generateDiagnostics(
+  static void generateDiagnostics(
       Cli.Result analysisResult, JsonObject result, MessageService messageService) {
     JsonArray diagnostics = new JsonArray();
     analysisResult

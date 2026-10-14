@@ -18,14 +18,19 @@ IMS segments and CICS queues, each with its file and line. It has no dependencie
 ## Parse a source tree
 
 Build `server.jar` first (see [server/CLI.md](../../server/CLI.md)). Then, from the root of the
-application's repository, run the parser over every `.cbl` and `.cob` file, one Java process per
-program:
+application's repository, run the parser over every `.cbl` and `.cob` file:
 
 ```sh
 pip install ./toolkit/python
 export PARSEBOL_JAR=$PWD/server/engine/target/server.jar
 cobolgraph parse app -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j 6
 ```
+
+`-j` sets how many parser processes run at once (default 4). Each one stays up and parses program
+after program, so Java start-up is paid once per process, and a separate pool of Python processes
+records the results. CardDemo's 44 programs take about 9 seconds with `-j 4`; 440 take about 30.
+A parser process that crashes or takes longer than 15 minutes on one program is replaced, and that
+program is recorded as crashed.
 
 Results go into a store, `.cobolgraph/` by default (`--store` to change it). The store holds `map.db`, a SQLite database, and `graphs/`, one graph
 file per program. Each run records every file's status and diagnostics and the programs, calls and

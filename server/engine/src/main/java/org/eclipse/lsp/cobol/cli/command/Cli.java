@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - add the graph command
  *
  */
 package org.eclipse.lsp.cobol.cli.command;
@@ -50,7 +51,13 @@ import picocli.CommandLine;
     mixinStandardHelpOptions = true,
     scope = CommandLine.ScopeType.INHERIT,
     versionProvider = VersionProvider.class,
-    subcommands = {ListSources.class, ListCopybooks.class, CliAnalysis.class, CliCFAST.class})
+    subcommands = {
+      ListSources.class,
+      ListCopybooks.class,
+      CliAnalysis.class,
+      CliCFAST.class,
+      CliGraph.class
+    })
 @Slf4j
 public class Cli implements Callable<Integer> {
   static final int SUCCESS = 0;

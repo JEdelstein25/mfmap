@@ -237,15 +237,18 @@ class Program:
     def __repr__(self) -> str:
         return f"<Program {self.name}>"
 
-    def _own(self) -> Iterator[Node]:
-        """Nodes of this program, excluding nested programs."""
-        stack = list(reversed(self.node.children))
-        while stack:
-            n = stack.pop()
-            if n.kind == "ProgramNode":
-                continue
-            yield n
-            stack.extend(reversed(n.children))
+    def _own(self) -> list[Node]:
+        """Nodes of this program in pre-order, excluding nested programs; walked once."""
+        if "_nodes" not in self.__dict__:
+            nodes, stack = [], list(reversed(self.node.children))
+            while stack:
+                n = stack.pop()
+                if n.kind == "ProgramNode":
+                    continue
+                nodes.append(n)
+                stack.extend(reversed(n.children))
+            self.__dict__["_nodes"] = nodes
+        return self.__dict__["_nodes"]
 
     @cached_property
     def _items(self) -> dict[str, "DataItem"]:
@@ -260,8 +263,15 @@ class Program:
     def all_data_items(self) -> list["DataItem"]:
         return list(self._items.values())
 
+    @cached_property
+    def _items_by_name(self) -> dict[str, "DataItem"]:
+        by_name: dict[str, DataItem] = {}
+        for i in self._items.values():
+            by_name.setdefault(i.name, i)  # the first definition, as before
+        return by_name
+
     def data_item(self, name: str) -> Optional["DataItem"]:
-        return next((i for i in self._items.values() if i.name == name.upper()), None)
+        return self._items_by_name.get(name.upper())
 
     def item(self, node: Node) -> Optional["DataItem"]:
         return self._items.get(node.id)
@@ -274,17 +284,49 @@ class Program:
     def sections(self) -> list["Paragraph"]:
         return [Paragraph(self, n) for n in self._own() if n.node_type == "PROCEDURE_SECTION"]
 
+    @cached_property
+    def _paragraphs_by_name(self) -> dict[str, "Paragraph"]:
+        by_name: dict[str, Paragraph] = {}
+        for p in self.paragraphs + self.sections:
+            by_name.setdefault(p.name, p)
+        return by_name
+
+    @cached_property
+    def _paragraphs_by_node(self) -> dict[str, "Paragraph"]:
+        return {p.node.id: p for p in self.paragraphs + self.sections}
+
     def paragraph(self, name: str) -> Optional["Paragraph"]:
-        name = name.upper()
-        return next((p for p in self.paragraphs + self.sections if p.name == name), None)
+        return self._paragraphs_by_name.get(name.upper())
+
+    @cached_property
+    def _statements_by_paragraph(self) -> dict[Optional[str], list["Statement"]]:
+        index: dict[Optional[str], list[Statement]] = {}
+        for s in self.statements:
+            index.setdefault(s.paragraph.node.id if s.paragraph else None, []).append(s)
+        return index
+
+    @cached_property
+    def _performs_by_target(self) -> dict[str, list["Perform"]]:
+        index: dict[str, list[Perform]] = {}
+        for p in self.performs:
+            if p.target is not None:
+                index.setdefault(p.target.node.id, []).append(p)
+        return index
 
     @cached_property
     def statements(self) -> list["Statement"]:
         """Every statement in the procedure division, nested statements included."""
         return [statement(self, n) for n in self._own() if n.node_type in STATEMENT_NODE_TYPES]
 
+    @cached_property
+    def _by_class(self) -> dict[type, list["Statement"]]:
+        index: dict[type, list[Statement]] = {}
+        for s in self.statements:
+            index.setdefault(type(s), []).append(s)
+        return index
+
     def _of(self, cls):
-        return [s for s in self.statements if isinstance(s, cls)]
+        return self._by_class.get(cls, [])
 
     calls = property(lambda self: self._of(Call))
     performs = property(lambda self: self._of(Perform))
@@ -441,7 +483,7 @@ class Paragraph:
 
     @property
     def statements(self) -> list["Statement"]:
-        return [s for s in self.program.statements if s.paragraph == self]
+        return self.program._statements_by_paragraph.get(self.node.id, [])
 
     @property
     def performs(self) -> list["Perform"]:
@@ -449,7 +491,7 @@ class Paragraph:
 
     @property
     def performed_by(self) -> list["Perform"]:
-        return [p for p in self.program.performs if p.target == self]
+        return self.program._performs_by_target.get(self.node.id, [])
 
     def __eq__(self, other) -> bool:
         return isinstance(other, Paragraph) and other.node is self.node
@@ -476,11 +518,11 @@ class Statement:
         words = self.source.split(None, 1)
         return words[0].upper().rstrip(".") if words else self.node.node_type
 
-    @property
+    @cached_property
     def paragraph(self) -> Optional[Paragraph]:
         for a in self.node.ancestors():
             if a.kind == "ParagraphNode" or a.node_type == "PROCEDURE_SECTION":
-                return Paragraph(self.program, a)
+                return self.program._paragraphs_by_node.get(a.id) or Paragraph(self.program, a)
         return None
 
     @property

@@ -39,7 +39,7 @@ class StoreTest(unittest.TestCase):
         text = (FIXTURES / "SAMPLE.json").read_text().replace("/FIXTURE", str(self.src))
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
-        return json.loads(text)
+        return text
 
     def parse(self, *copybook_dirs):
         self.parsed = []
