@@ -5,10 +5,11 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""Store and dashboard tests. The parser is replaced by a copy of fixtures/SAMPLE.json whose
+"""Store and report tests. The parser is replaced by a copy of fixtures/SAMPLE.json whose
 /FIXTURE paths point at a temporary copy of the fixtures, so no Java is needed."""
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -16,7 +17,8 @@ from pathlib import Path
 from unittest import mock
 
 from cobolgraph import store
-from cobolgraph.serve import Dashboard
+from cobolgraph.report import add_note, report
+from cobolgraph.serve import source
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -41,6 +43,9 @@ class StoreTest(unittest.TestCase):
 
     def parse(self, *copybook_dirs):
         self.parsed = []
+        cwd = os.getcwd()
+        os.chdir(self.src)  # the parse root, as when run from the application's repository
+        self.addCleanup(os.chdir, cwd)
         with mock.patch.object(store, "parse_one", self.fake_parse):
             return store.parse(self.store, self.jar, [self.src / "SAMPLE.cbl"],
                                copybook_dirs or [self.src / "cpy"], jobs=1)
@@ -82,21 +87,34 @@ class StoreTest(unittest.TestCase):
         self.parse(earlier, self.src / "cpy")  # SAMPREC now resolves to another file
         self.assertEqual(self.parsed, ["SAMPLE.cbl"])
 
-    def test_dashboard_state_and_source_access(self):
+    def test_report_and_source_access(self):
         self.parse()
-        dashboard = Dashboard(self.store)
-        state = dashboard.state()
-        self.assertEqual([p["name"] for p in state["programs"]], ["SAMPLE"])
-        self.assertEqual(state["files"][0]["status"], "clean")
-        self.assertIn(("ims", "PAUTSUM0"), {(a["store"], a["resource"]) for a in state["access"]})
-        self.assertEqual(len(state["checks"]), 5)
-        program = dashboard.program("SAMPLE")
-        self.assertIn("1000-READ", [p["name"] for p in program["paragraphs"]])
-        source = str(self.src / "SAMPLE.cbl")
-        self.assertEqual(dashboard.source(source, 40)["lines"][12].strip(), "CALL 'SAMPUTIL' USING WS-AMOUNT")
-        self.assertIsNotNone(dashboard.source(str(self.src / "cpy" / "SAMPREC.cpy"), 1))
-        self.assertIsNone(dashboard.source(str(self.jar), 1))
+        add_note(self.store, "Added MQ copybooks; COPAUA0C still fails at app/x.cbl:12.")
+        markdown, status = report(self.store)
+        self.assertEqual(status["run"]["status"], "finished")
+        self.assertIn("1 clean, 0 with errors, 0 crashed, 0 reused", markdown)
+        self.assertIn("- 1 program (`.cbl` and `.cob` files).", markdown)
+        self.assertIn("4 calls between programs: 2 name the program, 1 use a data item's VALUE, "
+                      "1 are set at run time (1 with names the program MOVEs into them).", markdown)
+        self.assertIn("- SAMPLE XCTL `WS-NEXT-PGM` at SAMPLE.cbl:79, maybe SAMPNXT", markdown)
+        self.assertIn("Copybooks found in folders: `cpy` (1)", markdown)
+        self.assertIn("COPAUA0C still fails", markdown)
+        self.assertIn("_Not ready.", markdown)
 
+        (self.src / "migration-spec.json").write_text(json.dumps({"units": [
+            {"id": "U2", "name": "Later", "wave": 2, "dependsOn": ["U1"]},
+            {"id": "U1", "name": "First", "wave": 1, "programs": ["SAMPLE"]}]}))
+        markdown, _ = report(self.store, str(self.src / "migration-spec.json"))
+        backlog = markdown[markdown.index("## Backlog"):]
+        self.assertLess(backlog.index("### Wave 1"), backlog.index("### Wave 2"))
+        self.assertIn("- **U1** First; programs: SAMPLE", backlog)
+        self.assertIn("- **U2** Later; depends on: U1", backlog)
+
+        source_file = str(self.src / "SAMPLE.cbl")
+        self.assertEqual(source(self.store, source_file, 40)["lines"][12].strip(),
+                         "CALL 'SAMPUTIL' USING WS-AMOUNT")
+        self.assertIsNotNone(source(self.store, str(self.src / "cpy" / "SAMPREC.cpy"), 1))
+        self.assertIsNone(source(self.store, str(self.jar), 1))
 
 if __name__ == "__main__":
     unittest.main()

@@ -65,7 +65,7 @@ PER_FILE_TABLES = ("diagnostics", "programs", "calls", "access", "file_controls"
 
 
 def connect(store: str | os.PathLike) -> sqlite3.Connection:
-    """Open ``<store>/map.db``, creating it if needed. WAL lets the dashboard read during a run."""
+    """Open ``<store>/map.db``, creating it if needed. WAL lets the report page read during a run."""
     Path(store).mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(Path(store) / "map.db", timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -157,7 +157,7 @@ def parse(
     progress: Optional[Callable[[str, str], None]] = None,
 ) -> int:
     """Parse ``sources`` into the store and return the run id. Each file's results are committed
-    as soon as it finishes, so a dashboard can follow the run."""
+    as soon as it finishes, so the report page can follow the run."""
     store = Path(store)
     conn = connect(store)
     options = parser_options(copybook_dirs, copybook_extensions)

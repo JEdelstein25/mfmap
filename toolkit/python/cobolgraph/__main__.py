@@ -19,6 +19,7 @@ from . import mq
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, data_access
 from .run import find_sources
+from .report import add_note, report
 from .serve import serve
 from .store import parse
 
@@ -110,11 +111,19 @@ def main(argv=None) -> int:
     p.add_argument("-j", "--jobs", type=int, default=4)
     p.add_argument("--force", action="store_true", help="parse unchanged files again")
 
-    v = commands.add_parser("serve", help="dashboard over the store")
+    v = commands.add_parser("serve", help="serve the report page, refreshed as it changes")
     v.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
     v.add_argument("--host", default="127.0.0.1")
     v.add_argument("--port", type=int, default=8765)
     v.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
+
+    r = commands.add_parser("report", help="print the report page as Markdown")
+    r.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+    r.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
+
+    n = commands.add_parser("note", help="add a timestamped note to the report")
+    n.add_argument("text", help="Markdown; file:line references link to the source")
+    n.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
 
     s = commands.add_parser("summary", help="parse rate, counts and common errors")
     s.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
@@ -162,6 +171,12 @@ def main(argv=None) -> int:
         return 1 if statuses["crash"] else 0
     if args.command == "serve":
         serve(args.store, args.host, args.port, args.spec)
+        return 0
+    if args.command == "report":
+        print(report(args.store, args.spec)[0])
+        return 0
+    if args.command == "note":
+        print(f"added to {add_note(args.store, args.text)}")
         return 0
     project = Project.load(args.graphs)
     if args.command == "summary":

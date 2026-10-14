@@ -27,8 +27,7 @@ export PARSEBOL_JAR=$PWD/server/engine/target/server.jar
 cobolgraph parse app -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j 6
 ```
 
-Results go into a store, `.cobolgraph/` by default (`--store` to change it); add it to the
-application's `.gitignore`. The store holds `map.db`, a SQLite database, and `graphs/`, one graph
+Results go into a store, `.cobolgraph/` by default (`--store` to change it). The store holds `map.db`, a SQLite database, and `graphs/`, one graph
 file per program. Each run records every file's status and diagnostics and the programs, calls and
 data access in it, committing each file as soon as it finishes. A program that fails to analyse
 still gets a graph file, with `crash` set to the error.
@@ -38,28 +37,30 @@ copybooks it used and `server.jar` are unchanged and every COPY still resolves t
 with the current copybook folders. Adding a folder that supplies a missing copybook re-parses just
 the programs that need it. `--force` parses everything again.
 
-## Follow along in the dashboard
+## Follow along
 
 ```sh
-cobolgraph serve            # http://127.0.0.1:8765/, reads .cobolgraph/map.db
+cobolgraph serve            # http://127.0.0.1:8765/
+cobolgraph report           # the same page as Markdown, for an agent to read
+cobolgraph note "Added the MQ copybook folder; only the 3 MQ programs were parsed again."
 ```
 
-The dashboard refreshes while a parse runs. It shows:
+One page explains how the map was built, refreshed while a parse runs or the notes change:
 
-- **Progress:** files parsed, clean, with errors, crashed and reused, each run's results, and the
-  count check against the text scan.
-- **Errors:** errors grouped by message, such as `Variable DFHENTER is not defined`, with every
-  location.
-- **Program Map:** calls between programs in columns by call depth, programs outside the
-  repository, and unresolved calls with the names the program moves into them.
-- **Data Map:** which programs read and write each Db2 table, VSAM file, batch file, IMS segment
-  and queue, with the statements behind each cell.
-- **Backlog:** the units, waves and open questions in `migration-spec.json`, when the file exists
-  next to the store or in the parse root (`--spec` to name another file).
+- **Inputs:** the programs, the folder each copybook came from, the copybooks the parser supplied
+  and the ones it could not find.
+- **Parse Errors:** grouped by message, with locations.
+- **What the Parser Found:** paragraphs, statements, data items, calls by how their targets were
+  resolved, data access by kind of store, and the calls set at run time.
+- **Count Check:** graph counts compared with the text scan.
+- **Notes:** `.cobolgraph/notes.md`, which the agent (or anyone) adds to with `cobolgraph note` or
+  edits directly. Write what was done, what was found and why.
+- **Backlog:** units by wave and open questions from `migration-spec.json`, once it has units. The
+  file is looked for in the parse root and next to the store; `--spec` names another.
 
-Click a program for its paragraphs, data items, calls and data access, and any file and line for
-the source around it. The server binds to 127.0.0.1; reach it from elsewhere through a tunnel or
-port forward.
+Any `file.cbl:line` reference on the page opens the source around that line. The server binds to
+127.0.0.1; reach it from elsewhere through a tunnel or port forward. To keep the notes in Git while
+ignoring the rest of the store, add `.cobolgraph/*` and `!.cobolgraph/notes.md` to `.gitignore`.
 
 ### Copybooks IBM supplies
 
