@@ -1,0 +1,130 @@
+# Copyright (c) 2026 Amp.
+#
+# This program and the accompanying materials are made
+# available under the terms of the Eclipse Public License 2.0
+# which is available at https://www.eclipse.org/legal/epl-2.0/
+#
+# SPDX-License-Identifier: EPL-2.0
+"""Tests over fixtures/SAMPLE.json, produced from fixtures/SAMPLE.cbl by regenerate.sh."""
+
+import copy
+import json
+import unittest
+from pathlib import Path
+
+import cobolgraph as cg
+from cobolgraph.crosscheck import TextScan, graph_counts
+from cobolgraph.run import output_names
+
+FIXTURES = Path(__file__).parent / "fixtures"
+SCHEMA = Path(__file__).parents[3] / "schema" / "graph-v1.schema.json"
+
+
+def load():
+    return cg.load(FIXTURES / "SAMPLE.json", path_map={"/FIXTURE": str(FIXTURES)})
+
+
+class ModelTest(unittest.TestCase):
+    def setUp(self):
+        self.file = load()
+        self.program = self.file.programs[0]
+
+    def test_data_items(self):
+        p = self.program
+        self.assertEqual(p.data_item("WS-AMOUNT-X").redefines.name, "WS-AMOUNT")
+        self.assertIsNone(p.data_item("WS-AMOUNT").redefines)
+        entry = p.data_item("WS-ENTRY")
+        self.assertEqual((entry.occurs, entry.sync, entry.usage, entry.pic), (12, True, "COMP", "9(4)"))
+        self.assertEqual(entry.parent.name, "WS-TABLE")
+        self.assertEqual(p.data_item("SAMP-NAME").copybook, "SAMPREC")
+        self.assertIsNone(p.data_item("WS-CUST-NAME").copybook)
+        ok = p.data_item("WS-FILE-OK")
+        self.assertEqual((ok.level, ok.parent.name, ok.condition_values), (88, "WS-FILE-STATUS", [{"from": "'00'"}]))
+        self.assertEqual([i.name for i in p.file_control("ACCT-FILE").records], ["ACCT-REC"])
+
+    def test_references_carry_their_statements(self):
+        refs = self.program.data_item("WS-CUST-ID").references
+        self.assertEqual(
+            [(r.location.line, type(r.statement).__name__, r.statement.verb) for r in refs],
+            [(61, "Sql", "DECLARE"), (69, "Sql", "INSERT"), (82, "Dli", "GU")],
+        )
+
+    def test_paragraphs_and_performs(self):
+        p = self.program
+        read = p.paragraph("1000-READ")
+        self.assertEqual([s.verb for s in read.statements], ["OPEN", "OPEN", "READ", "IF", "MOVE", "WRITE", "CLOSE"])
+        self.assertEqual([s.location.line for s in read.performed_by], [36])
+        first = p.performs[0]
+        self.assertEqual((first.target.name, first.thru.name), ("1000-READ", "1000-EXIT"))
+        inline = [s for s in p.performs if s.target_name is None]
+        self.assertEqual([s.location.line for s in inline], [42])
+
+    def test_statement_source_drops_sequence_area(self):
+        read = next(s for s in self.program.cics if s.verb == "READ")
+        self.assertEqual(
+            read.source,
+            "EXEC CICS READ DATASET('ACCTDAT') INTO(ACCT-REC)\n        RIDFLD(ACCT-KEY) RESP(WS-RESP)\n    END-EXEC",
+        )
+
+    def test_call_edges(self):
+        edges = [(e.via, e.target, e.resolved, e.expression, e.candidates) for e in cg.call_edges(self.program)]
+        self.assertEqual(edges, [
+            ("CALL", "SAMPUTIL", "literal", "'SAMPUTIL'", ()),
+            ("CALL", "SAMPSUB", "value", "WS-PGM-NAME", ()),
+            ("LINK", "SAMPLNK", "literal", "'SAMPLNK'", ()),
+            ("XCTL", None, "unresolved", "WS-NEXT-PGM", ("SAMPNXT",)),
+        ])
+
+    def test_data_access(self):
+        access = {(a.store, a.resource, a.mode, a.statement.verb, a.paragraph.name)
+                  for a in cg.data_access(self.program)}
+        self.assertEqual(access, {
+            ("db2", "CARDDEMO.CUSTOMER", "read", "OPEN", "2000-DB2"),
+            ("db2", "CARDDEMO.CUSTOMER", "read", "FETCH", "2000-DB2"),
+            ("db2", "CARDDEMO.AUDIT_LOG", "write", "INSERT", "2000-DB2"),
+            ("vsam", "ACCTDAT", "read", "READ", "3000-CICS"),
+            ("vsam", "ACCTDAT", "write", "REWRITE", "3000-CICS"),
+            ("ims", "PAUTSUM0", "read", "GU", "4000-IMS"),
+            ("ims", "PAUTDTL1", "write", "ISRT", "4000-IMS"),
+            ("file", "ACCTDD", "read", "OPEN", "1000-READ"),
+            ("file", "RPTDD", "write", "OPEN", "1000-READ"),
+            ("file", "ACCTDD", "read", "READ", "1000-READ"),
+            ("file", "RPTDD", "write", "WRITE", "1000-READ"),
+        })
+
+    def test_crosscheck_counts_match(self):
+        scan = TextScan([FIXTURES / "cpy"])
+        self.assertEqual(scan.counts(FIXTURES / "SAMPLE.cbl"), graph_counts(self.program))
+        self.assertEqual(graph_counts(self.program)["PERFORM"], 5)  # END-PERFORM is not a PERFORM
+
+    def test_output_names_disambiguate_shared_stems(self):
+        names = output_names([Path("a/x/P.cbl"), Path("a/y/P.cbl"), Path("a/Q.cbl")])
+        self.assertEqual(sorted(names.values()), ["P.json", "P@y.json", "Q.json"])
+
+    def test_schema(self):
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema is not installed")
+        validator = jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text()))
+        data = json.loads((FIXTURES / "SAMPLE.json").read_text())
+        self.assertEqual(list(validator.iter_errors(data)), [])
+        broken = copy.deepcopy(data)
+        usage = next(n for n in self.file.nodes("VariableUsageNode") if n.refs("definitions"))
+        node = find(broken["tree"], usage.id)
+        node["definitions"] = [{"ref": "x1"}]
+        self.assertNotEqual(list(validator.iter_errors(broken)), [])
+
+
+def find(node, node_id):
+    if node["id"] == node_id:
+        return node
+    for child in node["children"]:
+        found = find(child, node_id)
+        if found:
+            return found
+    return None
+
+
+if __name__ == "__main__":
+    unittest.main()

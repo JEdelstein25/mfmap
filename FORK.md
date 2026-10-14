@@ -20,6 +20,11 @@ All changes are in the language server under `server/`. Each modified file lists
 3. **SQL detail:** each `EXEC SQL` node records its statement type, the tables and views it references, and its cursor name.
 4. **SYNC clause:** variable nodes record `SYNCHRONIZED` and its optional `LEFT` or `RIGHT` direction.
 5. **IMS DL/I:** `EXEC DLI` blocks become `ExecDliNode` statements with their command, options and host variable references, instead of "Unknown EXEC block" diagnostics.
+6. **Graph output:** `analysis --graph` prints the final syntax tree with an ID and class name on every node and references to other nodes by ID. [schema/graph-v1.schema.json](schema/graph-v1.schema.json) describes the format.
+
+## Toolkit
+
+[toolkit/python](toolkit/python) is `cobolgraph`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It is part of this fork and uses the same license.
 
 ## Distributing This Fork
 

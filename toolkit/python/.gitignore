@@ -1,0 +1,4 @@
+
+# Python toolkit
+__pycache__/
+*.egg-info/
