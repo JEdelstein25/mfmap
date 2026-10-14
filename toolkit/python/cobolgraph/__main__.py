@@ -15,6 +15,7 @@ import json
 import os
 import sys
 
+from . import mq
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, data_access
 from .run import find_sources, parse
@@ -115,7 +116,23 @@ def main(argv=None) -> int:
     c.add_argument("-cf", "--copybooks", action="append", default=[], help="copybook folder")
     c.add_argument("-ce", "--copybook-extension", action="append", default=[], help="copybook extension")
 
+    m = commands.add_parser("fetch-mq-copybooks", help="download IBM MQ's COBOL copybooks")
+    m.add_argument("--out", required=True, help="folder for the copybooks; pass it to parse with -cf")
+    m.add_argument("--version", help="MQ redistributable client version; default: the newest")
+    m.add_argument("--accept-license", action="store_true", help="accept IBM's MQ license terms")
+
     args = parser.parse_args(argv)
+    if args.command == "fetch-mq-copybooks":
+        if not args.accept_license:
+            print("The MQ copybooks are IBM's and are licensed under the IBM MQ license terms "
+                  "(https://www.ibm.com/terms). They come from IBM's free MQ redistributable "
+                  "client and are saved with IBM's license files. Run again with "
+                  "--accept-license to download them.", file=sys.stderr)
+            return 2
+        version, copybooks = mq.fetch(args.out, args.version)
+        print(f"wrote {len(copybooks)} IBM MQ {version} copybooks to {args.out}; "
+              f"add -cf {args.out} -ce cpy when parsing")
+        return 0
     if args.command == "parse":
         if not args.jar:
             parser.error("--jar or $PARSEBOL_JAR is required")

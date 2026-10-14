@@ -28,6 +28,24 @@ cobolgraph parse app --out graphs -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j
 
 A program that fails to analyse still gets a graph file, with `crash` set to the error.
 
+### Copybooks IBM supplies
+
+- `DFHAID` and `DFHBMSCA` (CICS): the parser has stand-ins it uses when your copybook folders
+  don't have them. Their values are the 3270 data stream bytes; check them against your CICS
+  release if a program compares fields with literal bytes.
+- `SQLCA` and `SQLDA` (Db2), `DFHEIBLK` (CICS) and the DL/I interface block for `EXEC DLI`
+  programs are defined by the parser.
+- IBM MQ copybooks (`CMQV`, `CMQODV`, ...): download them from IBM's free MQ redistributable
+  client. They are IBM's files under IBM's license, so this project does not ship them:
+
+  ```sh
+  cobolgraph fetch-mq-copybooks --out mq-copybooks --accept-license
+  cobolgraph parse app --out graphs -cf app/cpy -cf mq-copybooks -ce cpy
+  ```
+
+  The command writes the 64-bit copybooks as `NAME.cpy`, IBM's English license files under
+  `licenses/`, and `SOURCE.txt` with the download URL.
+
 ## Check the result
 
 ```sh
@@ -83,8 +101,8 @@ cursor's DECLARE. A batch file access names the file's `ASSIGN` name, which is t
 - `usage` is the parser's value; `UNDEFINED` means the item has no USAGE clause, so it is DISPLAY.
 - `callers(name)` returns resolved edges only; `callers(name, candidates=True)` adds unresolved
   edges whose `candidates` include the name.
-- Copybooks the parser cannot find, such as IBM's `DFHAID`, leave their data items undefined and
-  produce `semantics.notDefined` errors.
+- Copybooks the parser cannot find leave their data items undefined and produce
+  `semantics.notDefined` errors that name each undefined variable.
 
 ## Tests
 
