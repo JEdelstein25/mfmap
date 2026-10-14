@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - capture synchronized clauses in data descriptions
  *
  */
 
@@ -1288,6 +1289,13 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
             .picClauses(retrievePicTexts(ctx.dataPictureClause()))
             .valueClauses(retrieveValues(ctx.dataValueClause()))
             .usageClauses(retrieveUsageFormat(ctx.dataUsageClause()))
+            .synchronizedClause(!ctx.dataSynchronizedClause().isEmpty())
+            .synchronizedDirection(
+                ctx.dataSynchronizedClause().stream()
+                    .map(c -> c.LEFT() != null ? "LEFT" : c.RIGHT() != null ? "RIGHT" : null)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .orElse(null))
             .occursClauses(retrieveOccursValues(ctx.dataOccursClause()))
             .redefinesClauses(
                 ctx.dataRedefinesClause().stream()
@@ -1401,6 +1409,13 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
             .picClauses(retrievePicTexts(ctx.dataPictureClause()))
             .valueClauses(retrieveValues(ctx.dataValueClause()))
             .usageClauses(retrieveUsageFormat(ctx.dataUsageClause()))
+            .synchronizedClause(!ctx.dataSynchronizedClause().isEmpty())
+            .synchronizedDirection(
+                ctx.dataSynchronizedClause().stream()
+                    .map(c -> c.LEFT() != null ? "LEFT" : c.RIGHT() != null ? "RIGHT" : null)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .orElse(null))
             .occursClauses(retrieveOccursValues(ctx.dataOccursClause()))
             .redefinesClauses(
                 ctx.dataRedefinesClause().stream()

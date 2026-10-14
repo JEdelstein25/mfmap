@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - preserve ABEND command metadata
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree;
@@ -25,6 +26,8 @@ import org.eclipse.lsp.cobol.common.model.NodeType;
 @EqualsAndHashCode(callSuper = true)
 @Getter
 public class ExecCicsAbendNode extends Node {
+  @lombok.Setter private String command;
+  @lombok.Setter private java.util.List<?> options;
   private final boolean cancel;
 
   public ExecCicsAbendNode(Locality location, boolean cancel) {

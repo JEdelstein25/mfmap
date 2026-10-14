@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - retain metadata from the SQL parse tree
  *
  */
 package org.eclipse.lsp.cobol.implicitDialects.sql;
@@ -386,16 +387,17 @@ class Db2SqlVisitor extends Db2SqlParserBaseVisitor<List<Node>> {
 
     String sqlCode = preProcessSqlComment(ctx);
 
+    Db2SqlExecParser.StartSqlRuleContext sqlTree = parseSQL(sqlCode, ctx);
     List<Node> nodes =
-        new Db2SqlExecVisitor(context, copybookService, messageService)
-            .visitStartSqlRule(parseSQL(sqlCode, ctx));
+        new Db2SqlExecVisitor(context, copybookService, messageService).visitStartSqlRule(sqlTree);
     Db2SqlVisitorHelper.adjustNodeLocations(ctx, context, nodes);
     Location location =
         context.getExtendedDocument().mapLocation(AntlrRangeUtils.constructRange(ctx.getParent()));
     Locality locality =
         Locality.builder().range(location.getRange()).uri(location.getUri()).build();
 
-    Node sqlNode = new ExecSqlNode(locality);
+    ExecSqlNode sqlNode = new ExecSqlNode(locality);
+    sqlNode.describe(sqlTree);
     nodes.forEach(sqlNode::addChild);
     return Collections.singletonList(sqlNode);
   }

@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - provide safe defaults and headless client callbacks
  *
  */
 
@@ -21,19 +22,24 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.lsp.cobol.common.copybook.CopyBookDTO;
+import org.eclipse.lsp.cobol.core.model.extendedapi.ExtendedApiResult;
+import org.eclipse.lsp.cobol.lsp.DialectItemDTO;
 import org.eclipse.lsp.cobol.lsp.jrpc.CobolLanguageClient;
+import org.eclipse.lsp.cobol.lsp.jrpc.DialectProcessingResult;
 import org.eclipse.lsp4j.*;
 
 @Slf4j
 @Singleton
 public class CliClientProvider implements Provider<CobolLanguageClient> {
   private final CliClient client = new CliClient();
-  @Setter private List<File> cpyPaths;
-  @Setter private List<String> cpyExt;
+  @Setter private List<File> cpyPaths = Collections.emptyList();
+  @Setter private List<String> cpyExt = Collections.emptyList();
 
   /** The CliClientProvider class is a provider for the CobolLanguageClient interface. */
   public CliClientProvider() {}
@@ -46,24 +52,18 @@ public class CliClientProvider implements Provider<CobolLanguageClient> {
   class CliClient implements CobolLanguageClient {
 
     @Override
-    public void telemetryEvent(Object object) {
-      throw new UnsupportedOperationException();
-    }
+    public void telemetryEvent(Object object) {}
 
     @Override
-    public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {
-      throw new UnsupportedOperationException();
-    }
+    public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {}
 
     @Override
-    public void showMessage(MessageParams messageParams) {
-      throw new UnsupportedOperationException();
-    }
+    public void showMessage(MessageParams messageParams) {}
 
     @Override
     public CompletableFuture<MessageActionItem> showMessageRequest(
         ShowMessageRequestParams requestParams) {
-      throw new UnsupportedOperationException();
+      return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -72,8 +72,97 @@ public class CliClientProvider implements Provider<CobolLanguageClient> {
     }
 
     @Override
-    public void logMessage(MessageParams message) {
-      throw new UnsupportedOperationException();
+    public void logMessage(MessageParams message) {}
+
+    @Override
+    public CompletableFuture<ApplyWorkspaceEditResponse> applyEdit(ApplyWorkspaceEditParams params) {
+      return CompletableFuture.completedFuture(new ApplyWorkspaceEditResponse(false));
+    }
+
+    @Override
+    public CompletableFuture<Void> registerCapability(RegistrationParams params) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> unregisterCapability(UnregistrationParams params) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<ShowDocumentResult> showDocument(ShowDocumentParams params) {
+      return CompletableFuture.completedFuture(new ShowDocumentResult(false));
+    }
+
+    @Override
+    public CompletableFuture<List<WorkspaceFolder>> workspaceFolders() {
+      return CompletableFuture.completedFuture(Collections.emptyList());
+    }
+
+    @Override
+    public CompletableFuture<Void> createProgress(WorkDoneProgressCreateParams params) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public void notifyProgress(ProgressParams params) {}
+
+    @Override
+    public void logTrace(LogTraceParams params) {}
+
+    @Override
+    public CompletableFuture<Void> refreshSemanticTokens() {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> refreshCodeLenses() {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> refreshInlayHints() {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> refreshInlineValues() {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> refreshDiagnostics() {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<List<DialectItemDTO>> availableDialects() {
+      return CompletableFuture.completedFuture(Collections.emptyList());
+    }
+
+    @Override
+    public CompletableFuture<String> resolveSubroutine(String name) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<String> getFileContent(String uri) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<Void> downloadCopybooks(
+        String uri, List<CopyBookDTO> copybooks, boolean quietMode) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public void cfastReady(ExtendedApiResult result) {}
+
+    @Override
+    public CompletableFuture<DialectProcessingResult> processDialect(
+        String dialectName, String programUri, String text) {
+      return CompletableFuture.completedFuture(null);
     }
 
     @Override

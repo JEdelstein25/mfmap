@@ -2,6 +2,10 @@ This content is produced and maintained by the Eclipse COBOL Language Support pr
 
 * Project home: https://github.com/eclipse/che-che4z-lsp-for-cobol
 
+# Modified Version
+
+This copy has been modified by Amp. See [FORK.md](FORK.md) for the upstream commit and the list of changes.
+
 # Declared Project Licenses
 
 This program and the accompanying materials are made available under the terms

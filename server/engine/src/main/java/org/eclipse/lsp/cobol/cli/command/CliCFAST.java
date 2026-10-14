@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - configure copybook resolution for CFAST
  *
  */
 package org.eclipse.lsp.cobol.cli.command;
@@ -28,6 +29,7 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import org.eclipse.lsp.cobol.cfg.CFASTBuilder;
 import org.eclipse.lsp.cobol.cli.di.CliModule;
+import org.eclipse.lsp.cobol.cli.modules.CliClientProvider;
 import org.eclipse.lsp.cobol.common.dialects.CobolLanguageId;
 import org.eclipse.lsp.cobol.common.model.tree.ProgramNode;
 import org.eclipse.lsp.cobol.common.pipeline.StageResult;
@@ -46,11 +48,24 @@ public class CliCFAST implements Callable<Integer> {
       names = {"-sf", "--source_folder"})
   private Path workspace;
 
+  @CommandLine.Option(
+      names = {"-cf", "--copybook-folder"},
+      description = "Copybook folder. Relative paths resolve from the current working directory.")
+  private File[] cpyPaths = {};
+
+  @CommandLine.Option(
+      names = {"-ce", "--copybook-extension"},
+      description = "List of copybook extensions.")
+  private String[] cpyExt = {"", ".cpy"};
+
   @Override
   public Integer call() throws Exception {
     try {
       if (Objects.nonNull(workspace)) {
         Injector diCtx = Guice.createInjector(new CliModule());
+        CliClientProvider client = diCtx.getInstance(CliClientProvider.class);
+        client.setCpyPaths(Arrays.asList(cpyPaths));
+        client.setCpyExt(Arrays.asList(cpyExt));
         CFASTBuilder builder = diCtx.getInstance(CFASTBuilder.class);
 
         File[] paths = workspace.toFile().listFiles();

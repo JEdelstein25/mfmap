@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - verify AST selection, compact references and CFAST
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -17,8 +18,14 @@ package org.eclipse.lsp.cobol.cli;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -28,6 +35,7 @@ import org.eclipse.lsp.cobol.cli.command.Cli;
 import org.eclipse.lsp.cobol.cli.command.CliHelp;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.junit.jupiter.MockitoExtension;
 import picocli.CommandLine;
 
@@ -132,15 +140,93 @@ class CliTest {
             .collect(Collectors.toList());
     List<String> nonOptionBodyLines =
         Arrays.stream(sw.toString().split(System.lineSeparator()))
-            .skip(6) // Usage: synopsis (5 lines) + "analyse cobol source" header
+            .filter(line -> line.startsWith("   ") && !line.trim().startsWith("["))
             .filter(line -> !line.trim().isEmpty())
             .collect(Collectors.toList());
 
-    assertEquals(13, optionLines.size());
+    assertEquals(15, optionLines.size());
     assertEquals(
         optionLines.size(),
         nonOptionBodyLines.size(),
         "every non-blank line in the option list should itself start with an option name;"
             + " a mismatch means some description wrapped onto its own line");
+  }
+
+  @Test
+  void astSelectionAndCompactReferences(@TempDir Path directory) throws Exception {
+    Path source = directory.resolve("sample.cbl");
+    Files.write(
+        source,
+        ("       IDENTIFICATION DIVISION.\n"
+                + "       PROGRAM-ID. SAMPLE.\n       DATA DIVISION.\n"
+                + "       WORKING-STORAGE SECTION.\n       01 FIELD-A PIC X.\n"
+                + "       PROCEDURE DIVISION.\n           DISPLAY FIELD-A.\n"
+                + "           STOP RUN.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    JsonObject all = analyze(source).getAsJsonObject("asts");
+    assertEquals(8, all.size());
+    JsonObject last = analyze(source, "--ast-phase=FINAL").getAsJsonObject("asts");
+    assertEquals(Collections.singleton("VALIDATION"), last.keySet());
+    assertEquals(all.get("VALIDATION"), last.get("VALIDATION"));
+    assertEquals(
+        Collections.singleton("START"),
+        analyze(source, "--ast-phase=START").getAsJsonObject("asts").keySet());
+    JsonObject compact =
+        analyze(source, "--ast-phase=FINAL", "--ast-compact-references").getAsJsonObject("asts");
+    assertTrue(compact.toString().length() < last.toString().length());
+    assertTrue(checkReferences(compact.get("VALIDATION"), false) > 0);
+    assertChildrenPreserved(
+        last.getAsJsonObject("VALIDATION"), compact.getAsJsonObject("VALIDATION"));
+    assertEquals(0, new CommandLine(new Cli()).execute("cfast", "-sf", directory.toString()));
+    assertTrue(Files.size(directory.resolve("sample.cfast.json")) > 0);
+  }
+
+  private static void assertChildrenPreserved(JsonObject original, JsonObject compact) {
+    for (String key : Arrays.asList("nodeType", "name", "locality")) {
+      assertEquals(original.get(key), compact.get(key));
+    }
+    if (original.has("children")) {
+      com.google.gson.JsonArray children = original.getAsJsonArray("children");
+      com.google.gson.JsonArray compactChildren = compact.getAsJsonArray("children");
+      assertEquals(children.size(), compactChildren.size());
+      for (int i = 0; i < children.size(); i++) {
+        assertChildrenPreserved(
+            children.get(i).getAsJsonObject(), compactChildren.get(i).getAsJsonObject());
+      }
+    }
+  }
+
+  private static int checkReferences(com.google.gson.JsonElement element, boolean reference) {
+    int count = 0;
+    if (element.isJsonArray()) {
+      for (com.google.gson.JsonElement item : element.getAsJsonArray()) {
+        count += checkReferences(item, reference);
+      }
+    } else if (element.isJsonObject()) {
+      JsonObject object = element.getAsJsonObject();
+      if (reference && object.has("nodeType")) {
+        assertTrue(Arrays.asList("nodeType", "name", "locality").containsAll(object.keySet()));
+        return 1;
+      }
+      for (String key : object.keySet()) {
+        count += checkReferences(object.get(key), !key.equals("children"));
+      }
+    }
+    return count;
+  }
+
+  private static JsonObject analyze(Path source, String... options) {
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    PrintStream original = System.out;
+    try (PrintStream stream = new PrintStream(output)) {
+      System.setOut(stream);
+      List<String> args =
+          new java.util.ArrayList<>(Arrays.asList("analysis", "-s", source.toString(), "--ast"));
+      args.addAll(Arrays.asList(options));
+      assertEquals(0, new CommandLine(new Cli()).execute(args.toArray(new String[0])));
+    } finally {
+      System.setOut(original);
+    }
+    return JsonParser.parseString(output.toString()).getAsJsonObject();
   }
 }
