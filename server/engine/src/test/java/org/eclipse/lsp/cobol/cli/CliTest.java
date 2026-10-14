@@ -10,7 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
- *    Amp - verify AST selection, compact references and CFAST
+ *    Amp - verify AST selection, compact references, graph output and CFAST
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -144,7 +144,7 @@ class CliTest {
             .filter(line -> !line.trim().isEmpty())
             .collect(Collectors.toList());
 
-    assertEquals(15, optionLines.size());
+    assertEquals(16, optionLines.size());
     assertEquals(
         optionLines.size(),
         nonOptionBodyLines.size(),
@@ -179,6 +179,81 @@ class CliTest {
         last.getAsJsonObject("VALIDATION"), compact.getAsJsonObject("VALIDATION"));
     assertEquals(0, new CommandLine(new Cli()).execute("cfast", "-sf", directory.toString()));
     assertTrue(Files.size(directory.resolve("sample.cfast.json")) > 0);
+  }
+
+  @Test
+  void graphOutputHasNodeIdsAndReferencesById(@TempDir Path directory) throws Exception {
+    Path source = directory.resolve("sample.cbl");
+    Files.write(
+        source,
+        ("       IDENTIFICATION DIVISION.\n"
+                + "       PROGRAM-ID. SAMPLE.\n       DATA DIVISION.\n"
+                + "       WORKING-STORAGE SECTION.\n       01 GROUP-A.\n"
+                + "          05 FIELD-A PIC X.\n          05 FIELD-B PIC 9.\n"
+                + "       PROCEDURE DIVISION.\n           DISPLAY FIELD-B.\n"
+                + "           DISPLAY UNDEF-X.\n           STOP RUN.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    JsonObject output = run("analysis", "-s", source.toString(), "--graph");
+    assertEquals(1, output.get("schemaVersion").getAsInt());
+    assertTrue(!output.has("asts") && !output.has("timings"));
+    assertEquals(
+        "Variable UNDEF-X is not defined",
+        output.getAsJsonArray("diagnostics").get(0).getAsJsonObject().get("message").getAsString());
+    java.util.Map<String, JsonObject> nodes = new java.util.LinkedHashMap<>();
+    collectNodes(output.getAsJsonObject("tree"), nodes);
+    List<String> expectedIds = new java.util.ArrayList<>();
+    for (int i = 0; i < nodes.size(); i++) expectedIds.add("n" + i);
+    assertEquals(expectedIds, new java.util.ArrayList<>(nodes.keySet()));
+
+    JsonObject usage =
+        nodes.values().stream()
+            .filter(n -> "VariableUsageNode".equals(n.get("kind").getAsString()))
+            .filter(n -> "FIELD-B".equals(n.get("name").getAsString()))
+            .findFirst()
+            .orElseThrow(AssertionError::new);
+    String target =
+        usage.getAsJsonArray("definitions").get(0).getAsJsonObject().get("ref").getAsString();
+    assertEquals("ElementaryItemNode", nodes.get(target).get("kind").getAsString());
+    assertEquals("FIELD-B", nodes.get(target).get("name").getAsString());
+    assertEquals("9", nodes.get(target).get("picClause").getAsString());
+
+    JsonObject last =
+        run("analysis", "-s", source.toString(), "--ast", "--ast-phase=FINAL")
+            .getAsJsonObject("asts")
+            .getAsJsonObject("VALIDATION");
+    assertSameTree(last, output.getAsJsonObject("tree"));
+  }
+
+  private static void collectNodes(JsonObject node, java.util.Map<String, JsonObject> nodes) {
+    nodes.put(node.get("id").getAsString(), node);
+    node.getAsJsonArray("children").forEach(c -> collectNodes(c.getAsJsonObject(), nodes));
+  }
+
+  private static void assertSameTree(JsonObject snapshot, JsonObject graph) {
+    for (String key : snapshot.keySet()) {
+      assertTrue(graph.has(key), "graph node lacks " + key);
+    }
+    for (String key : Arrays.asList("nodeType", "name", "locality", "picClause", "level")) {
+      assertEquals(snapshot.get(key), graph.get(key));
+    }
+    com.google.gson.JsonArray children = snapshot.getAsJsonArray("children");
+    com.google.gson.JsonArray graphChildren = graph.getAsJsonArray("children");
+    assertEquals(children.size(), graphChildren.size());
+    for (int i = 0; i < children.size(); i++) {
+      assertSameTree(children.get(i).getAsJsonObject(), graphChildren.get(i).getAsJsonObject());
+    }
+  }
+
+  private static JsonObject run(String... args) {
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    PrintStream original = System.out;
+    try (PrintStream stream = new PrintStream(output)) {
+      System.setOut(stream);
+      assertEquals(0, new CommandLine(new Cli()).execute(args));
+    } finally {
+      System.setOut(original);
+    }
+    return JsonParser.parseString(output.toString()).getAsJsonObject();
   }
 
   private static void assertChildrenPreserved(JsonObject original, JsonObject compact) {

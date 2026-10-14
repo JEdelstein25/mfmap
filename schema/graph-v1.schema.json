@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JEdelstein25/parsebol/schema/graph-v1.schema.json",
+  "title": "parsebol graph output, version 1",
+  "description": "Output of `server.jar analysis --graph`. Copyright (c) 2026 Amp. SPDX-License-Identifier: EPL-2.0.",
+  "type": "object",
+  "required": ["uri", "language"],
+  "properties": {
+    "uri": { "type": "string" },
+    "language": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "tree": { "$ref": "#/$defs/node" },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "lines": { "type": "string" },
+    "size": { "type": "string" },
+    "crash": { "type": "string", "description": "Present instead of tree when analysis failed." }
+  },
+  "oneOf": [
+    { "required": ["schemaVersion", "tree"] },
+    { "required": ["crash"] }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^n(0|[1-9][0-9]*)$" },
+    "position": {
+      "type": "object",
+      "properties": {
+        "line": { "type": "integer", "minimum": 0, "description": "Zero-based line." },
+        "character": { "type": "integer", "minimum": 0, "description": "Zero-based column." }
+      }
+    },
+    "locality": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "description": "File the text comes from; a copybook URI for text expanded from a copybook." },
+        "range": {
+          "type": "object",
+          "properties": {
+            "start": { "$ref": "#/$defs/position" },
+            "end": { "$ref": "#/$defs/position" }
+          }
+        },
+        "copybookId": { "type": "string" }
+      }
+    },
+    "reference": {
+      "description": "A field that points to another node. `ref` is that node's id. A node outside the tree, such as an implicit CICS or Db2 register, has no id and is described instead.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["ref"],
+          "properties": { "ref": { "$ref": "#/$defs/id" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "nodeType"],
+          "properties": {
+            "kind": { "type": "string" },
+            "nodeType": { "type": "string" },
+            "locality": { "$ref": "#/$defs/locality" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "option": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string", "description": "Argument text as written; absent for a flag option." }
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "description": "A syntax tree node. Fields other than those listed are the Java node's own fields and vary by kind.",
+      "required": ["id", "kind", "nodeType", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "type": "string", "description": "Java class name of the node, for example ElementaryItemNode or ExecCicsNode." },
+        "nodeType": { "type": "string" },
+        "dialect": { "type": "string" },
+        "locality": { "$ref": "#/$defs/locality" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/node" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["ExecCicsNode", "ExecCicsReturnNode", "ExecCicsHandleNode", "ExecCicsAbendNode", "ExecDliNode"] } } },
+          "then": {
+            "properties": {
+              "command": { "type": "string" },
+              "options": { "type": "array", "items": { "$ref": "#/$defs/option" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "ExecSqlNode" } } },
+          "then": {
+            "required": ["statementType", "tables"],
+            "properties": {
+              "statementType": { "type": "string" },
+              "tables": { "type": "array", "items": { "type": "string" } },
+              "cursorName": { "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "nodeType": { "const": "VARIABLE" } } },
+          "then": {
+            "required": ["name", "variableType"],
+            "properties": {
+              "name": { "type": "string" },
+              "level": { "type": "integer" },
+              "variableType": { "type": "string" },
+              "picClause": { "type": "string" },
+              "usageFormat": { "type": "string" },
+              "occursTimes": { "type": "integer" },
+              "redefines": { "type": "boolean" },
+              "synchronizedClause": { "type": "boolean" },
+              "synchronizedDirection": { "enum": ["LEFT", "RIGHT"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "VariableUsageNode" } } },
+          "then": {
+            "properties": { "definitions": { "type": "array", "items": { "$ref": "#/$defs/reference" } } }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "QualifiedReferenceNode" } } },
+          "then": {
+            "properties": { "variableDefinitionNode": { "$ref": "#/$defs/reference" } }
+          }
+        }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "source": { "type": "string" },
+        "severity": { "type": "string" },
+        "suggestion": { "type": "string" },
+        "message": { "type": "string", "description": "The diagnostic text, for example \"Variable X is not defined\"." },
+        "location": { "type": "object" }
+      }
+    }
+  }
+}

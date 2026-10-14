@@ -1,0 +1,86 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. SAMPLE.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT ACCT-FILE ASSIGN TO ACCTDD
+                  ORGANIZATION IS INDEXED
+                  ACCESS MODE IS RANDOM
+                  RECORD KEY IS ACCT-KEY
+                  FILE STATUS IS WS-FILE-STATUS.
+           SELECT REPORT-FILE ASSIGN TO RPTDD.
+       DATA DIVISION.
+       FILE SECTION.
+       FD  ACCT-FILE.
+       01  ACCT-REC.
+           05 ACCT-KEY            PIC 9(11).
+           05 ACCT-DATA           PIC X(289).
+       FD  REPORT-FILE.
+       01  REPORT-LINE            PIC X(133).
+       WORKING-STORAGE SECTION.
+       COPY SAMPREC.
+       01  WS-FILE-STATUS         PIC XX.
+           88 WS-FILE-OK          VALUE '00'.
+           88 WS-FILE-EOF         VALUE '10'.
+       01  WS-PGM-NAME            PIC X(8) VALUE 'SAMPSUB'.
+       01  WS-NEXT-PGM            PIC X(8) VALUE SPACES.
+       01  WS-AMOUNT              PIC S9(7)V99 COMP-3.
+       01  WS-AMOUNT-X REDEFINES WS-AMOUNT PIC X(5).
+       01  WS-TABLE.
+           05 WS-ENTRY OCCURS 12 TIMES PIC 9(4) COMP SYNC.
+       01  WS-RESP                PIC S9(8) COMP.
+       01  WS-CUST-ID             PIC 9(9).
+       01  WS-CUST-NAME           PIC X(30).
+       PROCEDURE DIVISION.
+       0000-MAIN.
+           PERFORM 1000-READ THRU 1000-EXIT
+           PERFORM 2000-DB2
+           PERFORM 3000-CICS
+           PERFORM 4000-IMS
+           CALL 'SAMPUTIL' USING WS-AMOUNT
+           CALL WS-PGM-NAME USING WS-AMOUNT
+           PERFORM VARYING WS-RESP FROM 1 BY 1 UNTIL WS-RESP > 3
+               DISPLAY 'LOOP'
+           END-PERFORM
+           GOBACK.
+       1000-READ.
+           OPEN INPUT ACCT-FILE
+           OPEN OUTPUT REPORT-FILE
+           READ ACCT-FILE
+           IF WS-FILE-OK
+               MOVE ACCT-DATA TO REPORT-LINE
+               WRITE REPORT-LINE
+           END-IF
+           CLOSE ACCT-FILE REPORT-FILE.
+       1000-EXIT.
+           EXIT.
+       2000-DB2.
+           EXEC SQL
+               DECLARE CUST-CUR CURSOR FOR
+               SELECT CUST_NAME FROM CARDDEMO.CUSTOMER
+               WHERE CUST_ID > :WS-CUST-ID
+           END-EXEC
+           EXEC SQL OPEN CUST-CUR END-EXEC
+           EXEC SQL
+               FETCH CUST-CUR INTO :WS-CUST-NAME
+           END-EXEC
+           EXEC SQL
+               INSERT INTO CARDDEMO.AUDIT_LOG (CUST_ID)
+               VALUES (:WS-CUST-ID)
+           END-EXEC.
+       3000-CICS.
+           EXEC CICS READ DATASET('ACCTDAT') INTO(ACCT-REC)             SEQ00072
+               RIDFLD(ACCT-KEY) RESP(WS-RESP)
+           END-EXEC
+           EXEC CICS REWRITE FILE('ACCTDAT') FROM(ACCT-REC)
+           END-EXEC
+           EXEC CICS LINK PROGRAM('SAMPLNK') END-EXEC
+           MOVE 'SAMPNXT' TO WS-NEXT-PGM
+           EXEC CICS XCTL PROGRAM(WS-NEXT-PGM) END-EXEC.
+       4000-IMS.
+           EXEC DLI GU USING PCB(1) SEGMENT(PAUTSUM0)
+               INTO(WS-CUST-NAME) WHERE(ACCNTID = WS-CUST-ID)
+           END-EXEC
+           EXEC DLI ISRT USING PCB(1) SEGMENT(PAUTDTL1)
+               FROM(WS-CUST-NAME)
+           END-EXEC.
