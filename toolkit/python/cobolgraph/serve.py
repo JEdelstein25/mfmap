@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
-from .report import report
+from .report import backlog, report
 from .store import connect
 
 PAGE = Path(__file__).with_name("page.html")
@@ -57,7 +57,8 @@ def make_handler(store: Path, spec: Optional[str]):
                 self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             elif url.path == "/api/report":
                 markdown, status = report(store, spec)
-                self.send(200, json.dumps({"markdown": markdown, **status}).encode(), "application/json")
+                body = {"markdown": markdown, "backlog": backlog(store, spec), **status}
+                self.send(200, json.dumps(body).encode(), "application/json")
             elif url.path == "/api/source":
                 found = source(store, query.get("path", ""), int(query.get("line", "1")))
                 self.send(200 if found else 404, json.dumps(found).encode(), "application/json")

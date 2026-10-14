@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from cobolgraph import store
-from cobolgraph.report import add_note, report
+from cobolgraph.report import add_note, backlog, report
 from cobolgraph.serve import source
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -105,10 +105,27 @@ class StoreTest(unittest.TestCase):
             {"id": "U2", "name": "Later", "wave": 2, "dependsOn": ["U1"]},
             {"id": "U1", "name": "First", "wave": 1, "programs": ["SAMPLE"]}]}))
         markdown, _ = report(self.store, str(self.src / "migration-spec.json"))
-        backlog = markdown[markdown.index("## Backlog"):]
-        self.assertLess(backlog.index("### Wave 1"), backlog.index("### Wave 2"))
-        self.assertIn("- **U1** First; programs: SAMPLE", backlog)
-        self.assertIn("- **U2** Later; depends on: U1", backlog)
+        summary = markdown[markdown.index("## Backlog"):]
+        self.assertLess(summary.index("### Wave 1"), summary.index("### Wave 2"))
+        self.assertIn("- **U1** First; programs: SAMPLE", summary)
+        self.assertIn("- **U2** Later; depends on: U1", summary)
+
+        spec = json.loads((self.src / "migration-spec.json").read_text())
+        spec["units"][1]["interfaces"] = [{"name": "ACCT-REC", "layout": "CVACT01Y"}]
+        spec["units"][1]["acceptanceChecks"] = ["Balances match the batch report for every account"]
+        spec["units"][1]["writes"] = []
+        (self.src / "migration-spec.json").write_text(json.dumps(spec))
+        (self.src / "units").mkdir()
+        (self.src / "units" / "U1.md").write_text("# Business Rules\n\n- Rejects a zero amount at SAMPLE.cbl:40.\n")
+        full = backlog(self.store, str(self.src / "migration-spec.json"))
+        self.assertLess(full.index("### U1 First"), full.index("### U2 Later"))
+        self.assertIn("- **Programs:** SAMPLE", full)
+        self.assertIn("- **Interfaces:**\n  - Name: ACCT-REC; Layout: CVACT01Y", full)
+        self.assertIn("- **Acceptance checks:**\n  - Balances match the batch report for every account", full)
+        self.assertNotIn("Writes", full)
+        self.assertIn("#### Business Rules", full)
+        self.assertIn("Rejects a zero amount at SAMPLE.cbl:40.", full)
+        self.assertNotIn("Rejects a zero amount", full[full.index("### U2 Later"):])
 
         source_file = str(self.src / "SAMPLE.cbl")
         self.assertEqual(source(self.store, source_file, 40)["lines"][12].strip(),

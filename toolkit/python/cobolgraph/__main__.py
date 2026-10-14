@@ -19,7 +19,7 @@ from . import mq
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, data_access
 from .run import find_sources
-from .report import add_note, report
+from .report import add_note, backlog, report
 from .serve import serve
 from .store import parse
 
@@ -121,6 +121,10 @@ def main(argv=None) -> int:
     r.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
     r.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
 
+    b = commands.add_parser("backlog", help="print every backlog unit in full as Markdown")
+    b.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+    b.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
+
     n = commands.add_parser("note", help="add a timestamped note to the report")
     n.add_argument("text", help="Markdown; file:line references link to the source")
     n.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
@@ -174,6 +178,9 @@ def main(argv=None) -> int:
         return 0
     if args.command == "report":
         print(report(args.store, args.spec)[0])
+        return 0
+    if args.command == "backlog":
+        print(backlog(args.store, args.spec))
         return 0
     if args.command == "note":
         print(f"added to {add_note(args.store, args.text)}")

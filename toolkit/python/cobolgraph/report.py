@@ -14,6 +14,7 @@ from __future__ import annotations
 import collections
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -159,37 +160,66 @@ def parser_sections(conn, files, current, rel) -> list[str]:
     return out + [""]
 
 
-def backlog_section(path: Optional[Path], rel) -> list[str]:
-    out = ["\n## Backlog\n"]
+def pick(obj, *keys):
+    """The value of the first key in ``obj`` that matches one of ``keys`` ignoring case, ``_`` and
+    ``-``, since the agent chooses the exact field names in migration-spec.json."""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key.lower().replace("_", "").replace("-", "") in keys:
+                return value
+    return None
+
+
+def name(value) -> str:
+    if isinstance(value, dict):
+        return str(pick(value, "id", "name", "unit", "resource", "program") or json.dumps(value))
+    return str(value)
+
+
+def load_spec(path: Optional[Path], rel) -> tuple[Optional[dict], Optional[str]]:
+    """The spec, or a Markdown line saying why there is no backlog yet."""
     if not path:
-        return out + ["_Not ready. It appears here once `migration-spec.json` has units._\n"]
+        return None, "_Not ready. It appears here once `migration-spec.json` has units._\n"
     try:
         spec = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        return out + [f"Could not read `{rel(str(path))}`: {e}\n"]
+        return None, f"Could not read `{rel(str(path))}`: {e}\n"
+    if not pick(spec, "units", "backlog"):
+        return None, f"_Not ready. `{rel(str(path))}` has no units yet._\n"
+    return spec, None
 
-    def pick(obj, *keys):
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                if key.lower().replace("_", "").replace("-", "") in keys:
-                    return value
-        return None
 
-    def name(value):
-        if isinstance(value, dict):
-            return str(pick(value, "id", "name", "unit", "resource", "program") or json.dumps(value))
-        return str(value)
-
-    units = pick(spec, "units", "backlog") or []
-    if not units:
-        return out + [f"_Not ready. `{rel(str(path))}` has no units yet._\n"]
+def by_wave(units: list) -> list[tuple[str, list]]:
     waves = collections.defaultdict(list)
     for u in units:
         waves[pick(u, "wave", "wavenumber") or "unassigned"].append(u)
-    out.append(f"{len(units)} units from `{rel(str(path))}`.\n")
-    for wave in sorted(waves, key=lambda w: (not str(w).isdigit(), int(w) if str(w).isdigit() else 0, str(w))):
-        out.append(f"### Wave {wave}\n" if str(wave).isdigit() else f"### {wave}\n")
-        for u in waves[wave]:
+    order = sorted(waves, key=lambda w: (not str(w).isdigit(), int(w) if str(w).isdigit() else 0, str(w)))
+    return [(f"Wave {w}" if str(w).isdigit() else str(w), waves[w]) for w in order]
+
+
+def questions_section(spec: dict) -> list[str]:
+    questions = pick(spec, "openquestions", "questions") or []
+    if not questions:
+        return []
+    out = ["### Open Questions\n"]
+    for q in questions:
+        text = q if isinstance(q, str) else pick(q, "question", "text") or json.dumps(q)
+        default = pick(q, "default", "defaultassumption") if isinstance(q, dict) else None
+        out.append(f"- {text}" + (f" _Default: {default}_" if default else ""))
+    return out + [""]
+
+
+def backlog_section(path: Optional[Path], rel) -> list[str]:
+    out = ["\n## Backlog\n"]
+    spec, missing = load_spec(path, rel)
+    if missing:
+        return out + [missing]
+    units = pick(spec, "units", "backlog")
+    out.append(f"{len(units)} units from `{rel(str(path))}`. The Backlog tab "
+               "(`cobolgraph backlog`) has every unit in full.\n")
+    for wave, members in by_wave(units):
+        out.append(f"### {wave}\n")
+        for u in members:
             line = f"- **{name(u)}** {pick(u, 'name', 'title') or ''}".rstrip()
             for label, keys in (("programs", ("programs",)), ("depends on", ("dependencies", "dependson"))):
                 values = pick(u, *keys)
@@ -197,11 +227,67 @@ def backlog_section(path: Optional[Path], rel) -> list[str]:
                     line += f"; {label}: " + ", ".join(name(v) for v in values)
             out.append(line)
         out.append("")
-    questions = pick(spec, "openquestions", "questions") or []
-    if questions:
-        out.append("### Open Questions\n")
-        for q in questions:
-            text = q if isinstance(q, str) else pick(q, "question", "text") or json.dumps(q)
-            default = pick(q, "default", "defaultassumption") if isinstance(q, dict) else None
-            out.append(f"- {text}" + (f" _Default: {default}_" if default else ""))
-    return out + [""]
+    return out + questions_section(spec)
+
+
+def label(key: str) -> str:
+    words = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", key).replace("_", " ").replace("-", " ")
+    return words[:1].upper() + words[1:].lower()
+
+
+def field(key: str, value, indent: str = "") -> list[str]:
+    """A unit field as Markdown list items: short lists on one line, longer ones and objects
+    nested one level. Empty fields are left out."""
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return [f"{indent}- **{label(key)}:** {value}"]
+    if value in ([], {}, ""):
+        return []
+    if isinstance(value, list) and all(not isinstance(v, (dict, list)) and len(str(v)) <= 40 for v in value):
+        return [f"{indent}- **{label(key)}:** " + ", ".join(str(v) for v in value)]
+    out = [f"{indent}- **{label(key)}:**"]
+    items = value.items() if isinstance(value, dict) else enumerate(value)
+    for k, v in items:
+        if isinstance(v, dict):
+            text = "; ".join(f"{label(a)}: {b if not isinstance(b, (dict, list)) else json.dumps(b)}"
+                             for a, b in v.items())
+        elif isinstance(v, list):
+            text = ", ".join(str(x) for x in v)
+        else:
+            text = str(v)
+        out.append(f"{indent}  - " + (f"**{label(k)}:** {text}" if isinstance(k, str) else text))
+    return out
+
+
+def backlog(store: str | os.PathLike, spec: Optional[str] = None) -> str:
+    """Every unit in migration-spec.json with all of its fields and its units/<ID>.md file."""
+    store = Path(store).resolve()
+    conn = connect(store)
+    try:
+        run = conn.execute("SELECT root FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    finally:
+        conn.close()
+    root = run["root"] if run else str(store.parent)
+    rel = lambda p: os.path.relpath(p, root)  # noqa: E731
+    path = spec_path(store, root, spec)
+    out = ["# Backlog\n"]
+    data, missing = load_spec(path, rel)
+    if missing:
+        return "\n".join(out + [missing])
+    units = pick(data, "units", "backlog")
+    out.append(f"{len(units)} units from `{rel(str(path))}`, in build order.\n")
+    for wave, members in by_wave(units):
+        out.append(f"## {wave}\n")
+        for u in members:
+            unit_id = name(u)
+            out.append(f"### {unit_id} {pick(u, 'name', 'title') or ''}".rstrip() + "\n")
+            if isinstance(u, dict):
+                for key, value in u.items():
+                    if key.lower() not in ("id", "name", "title", "wave"):
+                        out += field(key, value)
+            notes = path.parent / "units" / f"{unit_id}.md"
+            if notes.is_file():
+                out.append(f"\nFrom `{rel(str(notes))}`:\n")
+                for line in notes.read_text(encoding="utf-8").splitlines():
+                    out.append(re.sub(r"^#{1,6} ", "#### ", line))
+            out.append("")
+    return "\n".join(out + questions_section(data))

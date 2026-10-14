@@ -42,6 +42,7 @@ the programs that need it. `--force` parses everything again.
 ```sh
 cobolgraph serve            # http://127.0.0.1:8765/
 cobolgraph report           # the same page as Markdown, for an agent to read
+cobolgraph backlog          # the Backlog tab as Markdown
 cobolgraph note "Added the MQ copybook folder; only the 3 MQ programs were parsed again."
 ```
 
@@ -58,7 +59,11 @@ One page explains how the map was built, refreshed while a parse runs or the not
 - **Backlog:** units by wave and open questions from `migration-spec.json`, once it has units. The
   file is looked for in the parse root and next to the store; `--spec` names another.
 
-Any `file.cbl:line` reference on the page opens the source around that line. The server binds to
+A second tab, **Backlog**, lists every unit in wave order with all of its fields from
+`migration-spec.json` (short lists on one line, longer ones and objects as nested bullets, empty
+fields left out) followed by its `units/<unit ID>.md` file, then the open questions.
+
+Any `file.cbl:line` reference on either tab opens the source around that line. The server binds to
 127.0.0.1; reach it from elsewhere through a tunnel or port forward. To keep the notes in Git while
 ignoring the rest of the store, add `.cobolgraph/*` and `!.cobolgraph/notes.md` to `.gitignore`.
 
