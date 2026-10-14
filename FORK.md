@@ -26,7 +26,7 @@ All changes are in the language server under `server/`. Each modified file lists
 
 ## Toolkit
 
-[toolkit/python](toolkit/python) is `cobolgraph`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.cobolgraph/map.db`, SQLite) that re-parses only changed programs, and `cobolgraph serve` shows one page on how the map was built, with the agent's notes and the backlog, refreshed while a parse runs. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository.
+[toolkit/python](toolkit/python) is `cobolgraph`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.cobolgraph/map.db`, SQLite) that re-parses only changed programs, and `cobolgraph serve` shows a Notes page on how the map was built, with the agent's notes, and a Backlog page, refreshed while a parse runs. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository.
 
 ## Distributing This Fork
 

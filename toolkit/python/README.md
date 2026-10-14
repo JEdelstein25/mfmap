@@ -46,7 +46,7 @@ cobolgraph backlog          # the Backlog tab as Markdown
 cobolgraph note "Added the MQ copybook folder; only the 3 MQ programs were parsed again."
 ```
 
-One page explains how the map was built, refreshed while a parse runs or the notes change:
+The **Notes** tab explains how the map was built and refreshes while a parse runs or the notes change:
 
 - **Inputs:** the programs, the folder each copybook came from, the copybooks the parser supplied
   and the ones it could not find.
@@ -54,7 +54,7 @@ One page explains how the map was built, refreshed while a parse runs or the not
 - **What the Parser Found:** paragraphs, statements, data items, calls by how their targets were
   resolved, data access by kind of store, and the calls set at run time.
 - **Count Check:** graph counts compared with the text scan.
-- **Notes:** `.cobolgraph/notes.md`, which the agent (or anyone) adds to with `cobolgraph note` or
+- **Agent Notes:** `.cobolgraph/notes.md`, which the agent (or anyone) adds to with `cobolgraph note` or
   edits directly. Write what was done, what was found and why.
 - **Backlog:** units by wave and open questions from `migration-spec.json`, once it has units. The
   file is looked for in the parse root and next to the store; `--spec` names another.

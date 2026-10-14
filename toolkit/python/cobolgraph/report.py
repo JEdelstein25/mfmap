@@ -5,7 +5,7 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""One Markdown page on how the map was built: what the parser read and found, the agent's notes,
+"""The Notes page as Markdown: what the parser read and found, the agent's notes,
 and the backlog once ``migration-spec.json`` has one. ``cobolgraph serve`` shows it; ``cobolgraph
 report`` prints it."""
 
@@ -55,7 +55,7 @@ def report(store: str | os.PathLike, spec: Optional[str] = None) -> tuple[str, d
         files = latest_files(conn)
         current = {f["path"] for f in files}
         status = collections.Counter(f["status"] for f in files)
-        out = [f"# How the Map Was Built\n\n`{root}`\n"]
+        out = [f"# Notes\n\n`{root}`\n"]
         if not run:
             out.append("No parse has run yet. Run `cobolgraph parse` to start.\n")
         else:
@@ -72,7 +72,7 @@ def report(store: str | os.PathLike, spec: Optional[str] = None) -> tuple[str, d
         conn.close()
 
     notes = store / NOTES
-    out.append("## Notes\n")
+    out.append("## Agent Notes\n")
     out.append(notes.read_text(encoding="utf-8").strip() + "\n" if notes.is_file() else
                "_No notes yet. Add one with `cobolgraph note \"...\"` or edit "
                f"`{rel(str(notes))}`._\n")
