@@ -20,11 +20,13 @@ All changes are in the language server under `server/`. Each modified file lists
 3. **SQL detail:** each `EXEC SQL` node records its statement type, the tables and views it references, and its cursor name.
 4. **SYNC clause:** variable nodes record `SYNCHRONIZED` and its optional `LEFT` or `RIGHT` direction.
 5. **IMS DL/I:** `EXEC DLI` blocks become `ExecDliNode` statements with their command, options and host variable references, instead of "Unknown EXEC block" diagnostics.
-6. **Graph output:** `analysis --graph` prints the final syntax tree with an ID and class name on every node and references to other nodes by ID. [schema/graph-v1.schema.json](schema/graph-v1.schema.json) describes the format.
+6. **CICS stand-in copybooks:** when the copybook folders have no `DFHAID` or `DFHBMSCA`, the parser uses stand-ins written for this fork (`server/engine/src/main/resources/implicitCopybooks/`). Their names follow IBM's public CICS documentation and their values are the EBCDIC bytes of the IBM 3270 data stream. They are not IBM's copybooks. A copybook with the same name in the copybook folders takes precedence.
+7. **DL/I interface block:** programs with `EXEC DLI` get the DIB fields (`DIBSTAT`, `DIBSEGM` and the others in IBM's documented COBOL layout) in working storage, as the IMS translator adds them.
+8. **Graph output:** `analysis --graph` prints the final syntax tree with an ID and class name on every node and references to other nodes by ID. [schema/graph-v1.schema.json](schema/graph-v1.schema.json) describes the format.
 
 ## Toolkit
 
-[toolkit/python](toolkit/python) is `cobolgraph`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It is part of this fork and uses the same license.
+[toolkit/python](toolkit/python) is `cobolgraph`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository.
 
 ## Distributing This Fork
 

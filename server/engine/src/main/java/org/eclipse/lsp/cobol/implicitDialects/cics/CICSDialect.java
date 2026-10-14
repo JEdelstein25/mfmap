@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - provide stand-ins for DFHAID and DFHBMSCA
  *
  */
 
@@ -21,12 +22,16 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
+import org.eclipse.lsp.cobol.common.AnalysisConfig;
 import org.eclipse.lsp.cobol.common.ResultWithErrors;
+import org.eclipse.lsp.cobol.common.copybook.CopybookModel;
+import org.eclipse.lsp.cobol.common.copybook.CopybookName;
 import org.eclipse.lsp.cobol.common.copybook.CopybookService;
 import org.eclipse.lsp.cobol.common.dialects.CobolDialect;
 import org.eclipse.lsp.cobol.common.dialects.DialectOutcome;
 import org.eclipse.lsp.cobol.common.dialects.DialectProcessingContext;
 import org.eclipse.lsp.cobol.common.error.SyntaxError;
+import org.eclipse.lsp.cobol.common.file.WorkspaceFileService;
 import org.eclipse.lsp.cobol.common.message.MessageService;
 import org.eclipse.lsp.cobol.common.model.tree.CompilerDirectiveNode;
 import org.eclipse.lsp.cobol.common.model.tree.Node;
@@ -34,6 +39,7 @@ import org.eclipse.lsp.cobol.common.model.tree.ProgramNode;
 import org.eclipse.lsp.cobol.common.model.tree.SectionNode;
 import org.eclipse.lsp.cobol.common.processor.ProcessingPhase;
 import org.eclipse.lsp.cobol.common.processor.ProcessorDescription;
+import org.eclipse.lsp.cobol.common.utils.ImplicitCodeUtils;
 import org.eclipse.lsp.cobol.implicitDialects.cics.nodes.ExecCicsNode;
 import org.eclipse.lsp.cobol.implicitDialects.cics.processor.CICSExecBlockProcessor;
 import org.eclipse.lsp.cobol.implicitDialects.cics.processor.CICSImplicitVariablesProcessor;
@@ -80,6 +86,26 @@ public class CICSDialect implements CobolDialect {
     parseError.addAll(cicsVisitor.getErrors());
 
     return new ResultWithErrors<>(new DialectOutcome(nodes, context), parseError);
+  }
+
+  /**
+   * Stand-ins for IBM's DFHAID and DFHBMSCA, written from public documentation. A copybook with the
+   * same name in the copybook folders takes precedence.
+   */
+  @Override
+  public List<CopybookModel> getPredefinedCopybook(AnalysisConfig ctx) {
+    List<CopybookModel> copybooks = new ArrayList<>();
+    for (String name : ImmutableList.of("DFHAID", "DFHBMSCA")) {
+      CopybookName copybookName = new CopybookName(name);
+      String uri = ImplicitCodeUtils.createFullUrl(name);
+      copybooks.add(
+          new CopybookModel(
+              copybookName.toCopybookId(uri),
+              copybookName,
+              uri,
+              new WorkspaceFileService().readImplicitCode(name)));
+    }
+    return copybooks;
   }
 
   @Override

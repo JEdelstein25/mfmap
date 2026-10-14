@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - define the DL/I interface block for EXEC DLI programs
  *
  */
 package org.eclipse.lsp.cobol.dialects.ibm;
@@ -310,6 +311,8 @@ public class TransformTreeStage
     // Phase POST DEFINITION
     ctx.register(
         ProcessingPhase.POST_DEFINITION, SectionNode.class, new ImplicitVariablesProcessor());
+    ctx.register(
+        ProcessingPhase.POST_DEFINITION, SectionNode.class, new DliImplicitVariablesProcessor());
     ctx.register(
         ProcessingPhase.POST_DEFINITION,
         FunctionDeclaration.class,
