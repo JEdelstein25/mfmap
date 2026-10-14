@@ -19,3 +19,6 @@ cobolgraph = "cobolgraph.__main__:main"
 
 [tool.setuptools]
 packages = ["cobolgraph"]
+
+[tool.setuptools.package-data]
+cobolgraph = ["dashboard.html"]

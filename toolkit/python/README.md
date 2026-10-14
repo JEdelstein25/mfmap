@@ -17,16 +17,49 @@ IMS segments and CICS queues, each with its file and line. It has no dependencie
 
 ## Parse a source tree
 
-Build `server.jar` first (see [server/CLI.md](../../server/CLI.md)). Then run the parser over
-every `.cbl` and `.cob` file, one Java process per program:
+Build `server.jar` first (see [server/CLI.md](../../server/CLI.md)). Then, from the root of the
+application's repository, run the parser over every `.cbl` and `.cob` file, one Java process per
+program:
 
 ```sh
 pip install ./toolkit/python
 export PARSEBOL_JAR=$PWD/server/engine/target/server.jar
-cobolgraph parse app --out graphs -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j 6
+cobolgraph parse app -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j 6
 ```
 
-A program that fails to analyse still gets a graph file, with `crash` set to the error.
+Results go into a store, `.cobolgraph/` by default (`--store` to change it); add it to the
+application's `.gitignore`. The store holds `map.db`, a SQLite database, and `graphs/`, one graph
+file per program. Each run records every file's status and diagnostics and the programs, calls and
+data access in it, committing each file as soon as it finishes. A program that fails to analyse
+still gets a graph file, with `crash` set to the error.
+
+A later run parses only what changed: a program is reused from the store when its source, the
+copybooks it used and `server.jar` are unchanged and every COPY still resolves to the same file
+with the current copybook folders. Adding a folder that supplies a missing copybook re-parses just
+the programs that need it. `--force` parses everything again.
+
+## Follow along in the dashboard
+
+```sh
+cobolgraph serve            # http://127.0.0.1:8765/, reads .cobolgraph/map.db
+```
+
+The dashboard refreshes while a parse runs. It shows:
+
+- **Progress:** files parsed, clean, with errors, crashed and reused, each run's results, and the
+  count check against the text scan.
+- **Errors:** errors grouped by message, such as `Variable DFHENTER is not defined`, with every
+  location.
+- **Program Map:** calls between programs in columns by call depth, programs outside the
+  repository, and unresolved calls with the names the program moves into them.
+- **Data Map:** which programs read and write each Db2 table, VSAM file, batch file, IMS segment
+  and queue, with the statements behind each cell.
+- **Backlog:** the units, waves and open questions in `migration-spec.json`, when the file exists
+  next to the store or in the parse root (`--spec` to name another file).
+
+Click a program for its paragraphs, data items, calls and data access, and any file and line for
+the source around it. The server binds to 127.0.0.1; reach it from elsewhere through a tunnel or
+port forward.
 
 ### Copybooks IBM supplies
 
@@ -40,7 +73,7 @@ A program that fails to analyse still gets a graph file, with `crash` set to the
 
   ```sh
   cobolgraph fetch-mq-copybooks --out mq-copybooks --accept-license
-  cobolgraph parse app --out graphs -cf app/cpy -cf mq-copybooks -ce cpy
+  cobolgraph parse app -cf app/cpy -cf mq-copybooks -ce cpy
   ```
 
   The command writes the 64-bit copybooks as `NAME.cpy`, IBM's English license files under
@@ -49,11 +82,12 @@ A program that fails to analyse still gets a graph file, with `crash` set to the
 ## Check the result
 
 ```sh
-cobolgraph summary graphs        # parse rate, statement counts, most common errors
-cobolgraph crosscheck graphs -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY
-cobolgraph facts graphs --root . > facts.json   # programs, calls, data access, files
+cobolgraph summary              # parse rate, statement counts, most common errors
+cobolgraph crosscheck -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY
+cobolgraph facts --root . > facts.json   # programs, calls, data access, files
 ```
 
+These read the store's latest run; pass a folder of graph files instead to read those.
 `crosscheck` counts CALL, PERFORM, EXEC CICS, EXEC SQL and EXEC DLI with a text scan that does
 not use the parser, and lists every program where the two counts differ. Read both sides of a
 difference before trusting either one.
@@ -63,7 +97,7 @@ difference before trusting either one.
 ```python
 import cobolgraph as cg
 
-project = cg.Project.load("graphs")
+project = cg.Project.load(".cobolgraph")   # or a folder of graph files
 p = project.program("COACTUPC")
 
 item = p.data_item("ACCT-CURR-BAL")

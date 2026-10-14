@@ -33,11 +33,12 @@ from .model import (
     literal,
     load,
 )
-from .run import find_sources, parse
+from .run import find_sources
+from .store import load_project, parse
 
 __all__ = [
     "Access", "Call", "CallEdge", "Cics", "DataItem", "Dli", "FileControl", "FileIo", "GoTo",
     "Location", "Node", "Paragraph", "Perform", "Program", "Project", "Reference",
     "SCHEMA_VERSION", "SourceFile", "Sql", "Statement", "call_edges", "data_access",
-    "find_sources", "literal", "load", "parse",
+    "find_sources", "literal", "load", "load_project", "parse",
 ]

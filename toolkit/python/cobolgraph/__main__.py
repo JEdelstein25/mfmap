@@ -18,7 +18,9 @@ import sys
 from . import mq
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, data_access
-from .run import find_sources, parse
+from .run import find_sources
+from .serve import serve
+from .store import parse
 
 
 def where(location, root: str) -> str:
@@ -92,27 +94,37 @@ def summary(project: Project) -> str:
     return "\n".join(lines)
 
 
+STORE = ".cobolgraph"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="cobolgraph")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    p = commands.add_parser("parse", help="parse sources into graph files")
+    p = commands.add_parser("parse", help="parse sources into the store")
     p.add_argument("sources", nargs="+", help="source files or folders")
     p.add_argument("--jar", default=os.environ.get("PARSEBOL_JAR"), help="server.jar (or $PARSEBOL_JAR)")
-    p.add_argument("--out", required=True, help="output folder for graph files")
+    p.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
     p.add_argument("-cf", "--copybooks", action="append", default=[], help="copybook folder")
     p.add_argument("-ce", "--copybook-extension", action="append", default=[], help="copybook extension")
     p.add_argument("-j", "--jobs", type=int, default=4)
+    p.add_argument("--force", action="store_true", help="parse unchanged files again")
+
+    v = commands.add_parser("serve", help="dashboard over the store")
+    v.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+    v.add_argument("--host", default="127.0.0.1")
+    v.add_argument("--port", type=int, default=8765)
+    v.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
 
     s = commands.add_parser("summary", help="parse rate, counts and common errors")
-    s.add_argument("graphs", help="folder of graph files")
+    s.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
 
     f = commands.add_parser("facts", help="programs, calls, data access and files as JSON")
-    f.add_argument("graphs", help="folder of graph files")
+    f.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
     f.add_argument("--root", default=".", help="make evidence paths relative to this folder")
 
     c = commands.add_parser("crosscheck", help="compare statement counts with a text scan")
-    c.add_argument("graphs", help="folder of graph files")
+    c.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
     c.add_argument("-cf", "--copybooks", action="append", default=[], help="copybook folder")
     c.add_argument("-ce", "--copybook-extension", action="append", default=[], help="copybook extension")
 
@@ -136,13 +148,21 @@ def main(argv=None) -> int:
     if args.command == "parse":
         if not args.jar:
             parser.error("--jar or $PARSEBOL_JAR is required")
-        results = parse(args.jar, find_sources(args.sources), args.out, args.copybooks,
-                        args.copybook_extension, args.jobs)
-        for r in results:
-            if not r.ok:
-                print(f"crashed: {r.source}: {r.message}", file=sys.stderr)
-        print(f"parsed {sum(r.ok for r in results)} of {len(results)} sources into {args.out}")
-        return 0 if all(r.ok for r in results) else 1
+        sources = find_sources(args.sources)
+        statuses = collections.Counter()
+
+        def progress(path: str, status: str) -> None:
+            statuses[status] += 1
+            print(f"[{sum(statuses.values())}/{len(sources)}] {status:7} {os.path.relpath(path)}", flush=True)
+
+        run = parse(args.store, args.jar, sources, args.copybooks, args.copybook_extension,
+                    args.jobs, args.force, progress)
+        print(f"run {run}: " + ", ".join(f"{n} {s}" for s, n in sorted(statuses.items()))
+              + f"; store {args.store}")
+        return 1 if statuses["crash"] else 0
+    if args.command == "serve":
+        serve(args.store, args.host, args.port, args.spec)
+        return 0
     project = Project.load(args.graphs)
     if args.command == "summary":
         print(summary(project))

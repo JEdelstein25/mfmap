@@ -767,6 +767,11 @@ class Project:
 
     @classmethod
     def load(cls, directory: str | os.PathLike, **kwargs) -> "Project":
+        """Load a store (a folder with map.db) as of its latest run, or a folder of graph files."""
+        if (Path(directory) / "map.db").is_file():
+            from .store import load_project
+
+            return load_project(directory, **kwargs)
         paths = sorted(Path(directory).glob("*.json"))
         return cls(SourceFile.load(p, **kwargs) for p in paths)
 

@@ -5,27 +5,17 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""Run ``server.jar analysis --graph`` over a source tree, one JVM per program, in parallel."""
+"""Find sources and run ``server.jar analysis --graph`` on one of them."""
 
 from __future__ import annotations
 
 import json
 import os
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
 SOURCE_EXTENSIONS = (".cbl", ".cob")
-
-
-@dataclass(frozen=True)
-class ParseResult:
-    source: Path
-    output: Path
-    ok: bool
-    message: str = ""
 
 
 def find_sources(paths: Iterable[str | os.PathLike], extensions=SOURCE_EXTENSIONS) -> list[Path]:
@@ -49,43 +39,39 @@ def output_names(sources: Sequence[Path]) -> dict[Path, str]:
     return names
 
 
-def parse(
+def parse_one(
     jar: str | os.PathLike,
-    sources: Sequence[Path],
-    out_dir: str | os.PathLike,
-    copybook_dirs: Sequence[str | os.PathLike] = (),
-    copybook_extensions: Sequence[str] = (),
-    jobs: int = 4,
+    source: Path,
+    target: Path,
+    options: Sequence[str] = (),
     java: str = "java",
     java_options: Sequence[str] = (),
     timeout: int = 900,
-) -> list[ParseResult]:
-    """Parse each source into ``out_dir``. A failed run writes a graph file with ``crash`` set."""
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+) -> dict:
+    """Parse one source into ``target`` and return the graph. A failed run still writes a graph,
+    with ``crash`` set to the error."""
+    command = [java, *java_options, "-jar", str(jar), "analysis", "-s", str(source.resolve()),
+               "--graph", *options]
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        stdout, stderr = done.stdout, done.stderr
+    except subprocess.TimeoutExpired:
+        stdout, stderr = "", f"timed out after {timeout} s"
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        data = {"uri": source.resolve().as_uri(), "language": "cobol",
+                "crash": (stderr.strip().splitlines() or ["no output"])[-1]}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data), encoding="utf-8")
+    return data
+
+
+def parser_options(copybook_dirs: Sequence[str | os.PathLike] = (),
+                   copybook_extensions: Sequence[str] = ()) -> list[str]:
     options = []
     for d in copybook_dirs:
         options += ["-cf", str(Path(d).resolve())]
     for e in copybook_extensions:
         options += ["-ce", e]
-    names = output_names(sources)
-
-    def run(source: Path) -> ParseResult:
-        target = out / names[source]
-        command = [java, *java_options, "-jar", str(jar), "analysis", "-s", str(source.resolve()),
-                   "--graph", *options]
-        try:
-            done = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
-            stdout, stderr = done.stdout, done.stderr
-        except subprocess.TimeoutExpired:
-            stdout, stderr = "", f"timed out after {timeout} s"
-        try:
-            data = json.loads(stdout)
-        except json.JSONDecodeError:
-            data = {"uri": source.resolve().as_uri(), "language": "cobol",
-                    "crash": (stderr.strip().splitlines() or ["no output"])[-1]}
-        target.write_text(json.dumps(data), encoding="utf-8")
-        return ParseResult(source, target, "crash" not in data, data.get("crash", ""))
-
-    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-        return list(pool.map(run, sources))
+    return options
