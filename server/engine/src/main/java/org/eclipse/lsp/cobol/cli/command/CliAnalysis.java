@@ -10,11 +10,13 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
- *    Amp - select AST snapshots and compact node references
+ *    Amp - select AST snapshots, compact node references, print the graph output and messages
  *
  */
 package org.eclipse.lsp.cobol.cli.command;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -39,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.lsp.cobol.cli.di.CliModule;
 import org.eclipse.lsp.cobol.cli.modules.CliClientProvider;
 import org.eclipse.lsp.cobol.common.dialects.CobolLanguageId;
+import org.eclipse.lsp.cobol.common.message.MessageService;
 import org.eclipse.lsp.cobol.common.model.tree.RootNode;
 import org.eclipse.lsp.cobol.common.processor.ProcessingPhase;
 import org.eclipse.lsp.cobol.dialects.ibm.ProcessingResult;
@@ -48,6 +51,8 @@ import picocli.CommandLine;
 @CommandLine.Command(name = "analysis", description = "analyse cobol source")
 @Slf4j
 public class CliAnalysis implements Callable<Integer> {
+  private static final Gson GRAPH_GSON = new GsonBuilder().disableHtmlEscaping().create();
+
   @CommandLine.ParentCommand private Cli parent;
 
   @CommandLine.ArgGroup(multiplicity = "1")
@@ -83,6 +88,11 @@ public class CliAnalysis implements Callable<Integer> {
       description =
           "Emit node references with only nodeType, name and locality; preserve children.")
   private boolean compactReferences;
+
+  @CommandLine.Option(
+      names = "--graph",
+      description = "Print the final tree with node IDs and references by ID (graph-v1).")
+  private boolean printGraph;
 
   /** Snapshot selection in processing order. */
   public enum AstPhase {
@@ -123,6 +133,7 @@ public class CliAnalysis implements Callable<Integer> {
 
     Injector diCtx = Guice.createInjector(new CliModule());
     CliClientProvider cliClientProvider = diCtx.getInstance(CliClientProvider.class);
+    MessageService messageService = diCtx.getInstance(MessageService.class);
 
     cliClientProvider.setCpyPaths(createCopybooksPaths());
     cliClientProvider.setCpyExt(createCopybooksExtensions());
@@ -131,7 +142,19 @@ public class CliAnalysis implements Callable<Integer> {
         JsonObject result = createResultJson();
 
         Cli.Result analysisResult =
-            parent.runAnalysis(inputConfig.src, dialect, diCtx, true, printTree);
+            parent.runAnalysis(inputConfig.src, dialect, diCtx, true, printTree && !printGraph);
+        if (printGraph) {
+          RootNode root =
+              ((ProcessingResult) analysisResult.pipelineResult.getLastStageResult().getData())
+                  .getRootNode();
+          result.addProperty("schemaVersion", AstGraphSerializer.SCHEMA_VERSION);
+          result.add("tree", AstGraphSerializer.serialize(root));
+          if (!hideDiagnostics) {
+            generateDiagnostics(analysisResult, result, messageService);
+          }
+          System.out.println(GRAPH_GSON.toJson(result));
+          continue;
+        }
         parent.addTiming(result, analysisResult.ctx.getBenchmarkSession());
         if (printTree) {
           RootNode root =
@@ -167,7 +190,7 @@ public class CliAnalysis implements Callable<Integer> {
         }
 
         if (!hideDiagnostics) {
-          generateDiagnostics(analysisResult, result);
+          generateDiagnostics(analysisResult, result, messageService);
         }
         collectGcAndMemoryStats(result);
         System.out.println(CliUtils.GSON.toJson(result));
@@ -223,7 +246,8 @@ public class CliAnalysis implements Callable<Integer> {
     return result;
   }
 
-  private void generateDiagnostics(Cli.Result analysisResult, JsonObject result) {
+  private void generateDiagnostics(
+      Cli.Result analysisResult, JsonObject result, MessageService messageService) {
     JsonArray diagnostics = new JsonArray();
     analysisResult
         .ctx
@@ -231,6 +255,10 @@ public class CliAnalysis implements Callable<Integer> {
         .forEach(
             err -> {
               JsonObject diagnostic = CliUtils.diagnosticToJson(err);
+              if (err.getMessageTemplate() != null) {
+                diagnostic.addProperty(
+                    "message", messageService.localizeTemplate(err.getMessageTemplate()));
+              }
               diagnostics.add(diagnostic);
             });
     result.add("diagnostics", diagnostics);
