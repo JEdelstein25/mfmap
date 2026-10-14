@@ -23,7 +23,8 @@ All changes are in the language server under `server/`. Each modified file lists
 6. **CICS stand-in copybooks:** when the copybook folders have no `DFHAID` or `DFHBMSCA`, the parser uses stand-ins written for this fork (`server/engine/src/main/resources/implicitCopybooks/`). Their names follow IBM's public CICS documentation and their values are the EBCDIC bytes of the IBM 3270 data stream. They are not IBM's copybooks. A copybook with the same name in the copybook folders takes precedence.
 7. **DL/I interface block:** programs with `EXEC DLI` get the DIB fields (`DIBSTAT`, `DIBSEGM` and the others in IBM's documented COBOL layout) in working storage, as the IMS translator adds them.
 8. **`graph` command:** analyzes many programs in one process, reading paths from stdin and printing one graph per line, so Java start-up is paid once.
-9. **Graph output:** `analysis --graph` prints the final syntax tree with an ID and class name on every node and references to other nodes by ID. [schema/graph-v1.schema.json](schema/graph-v1.schema.json) describes the format.
+9. **Faster position lookups:** placing EXEC blocks and COPY statements in the syntax tree used to walk the whole tree once per block, so large programs slowed down faster than they grew. `NodePositionIndex` gives the same answers while skipping subtrees that cannot contain the position.
+10. **Graph output:** `analysis --graph` prints the final syntax tree with an ID and class name on every node and references to other nodes by ID. [schema/graph-v1.schema.json](schema/graph-v1.schema.json) describes the format.
 
 ## Toolkit
 
@@ -34,7 +35,7 @@ All changes are in the language server under `server/`. Each modified file lists
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.1.1 https://github.com/JEdelstein25/parsebol tools/cobol-parser
+git clone --branch v0.1.2 https://github.com/JEdelstein25/parsebol tools/cobol-parser
 (cd tools/cobol-parser/server && mvn -B -q -Dmaven.test.skip -pl engine -am package)
 tools/cobol-parser/toolkit/cobolgraph parse app -cf app/cpy -ce cpy
 tools/cobol-parser/toolkit/cobolgraph serve

@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - index node positions
  *
  */
 package org.eclipse.lsp.cobol.core.engine.processors;
@@ -25,7 +26,7 @@ import org.eclipse.lsp.cobol.common.model.tree.Node;
 import org.eclipse.lsp.cobol.common.model.tree.RootNode;
 import org.eclipse.lsp.cobol.common.processor.ProcessingContext;
 import org.eclipse.lsp.cobol.common.processor.Processor;
-import org.eclipse.lsp.cobol.common.utils.RangeUtils;
+import org.eclipse.lsp.cobol.common.utils.NodePositionIndex;
 import org.eclipse.lsp4j.Range;
 
 /** RootNode processor */
@@ -39,11 +40,12 @@ public class RootNodeUpdateCopyNodesByPositionInTree implements Processor<RootNo
     List<Node> cpyNodes =
         root.getChildren().stream().filter(Node.hasType(NodeType.COPY)).collect(toList());
     root.getChildren().removeAll(cpyNodes);
+    NodePositionIndex index = new NodePositionIndex();
     for (Node cpyNode : cpyNodes) {
       Locality l = cpyNode.getLocality();
-      Node parentNode =
-          RangeUtils.findNodeByPosition(root, l.getUri(), l.getRange().getStart()).orElse(root);
+      Node parentNode = index.find(root, l.getUri(), l.getRange().getStart()).orElse(root);
       parentNode.addChildAt(getNodeInsertionIndex(parentNode.getChildren(), cpyNode), cpyNode);
+      index.added(parentNode, cpyNode);
     }
 
     List<Node> copyNodes =
