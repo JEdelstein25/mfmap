@@ -16,14 +16,14 @@ mfmap maps a mainframe COBOL application for a migration. It parses every progra
 - reads and writes of Db2 tables, VSAM files, batch files, IMS segments and queues
 - dynamic SQL, commit points, and every data item with its level, PICTURE and other clauses
 
-It targets IBM Enterprise COBOL with Db2, CICS and IMS. It is a starting point to change for your codebase: when it fails on your code or leaves something out, change the parser in this checkout and build again.
+It targets IBM Enterprise COBOL with Db2, CICS and IMS. It is a starting point to change for your codebase: when it fails on your code or leaves something out, change it in this checkout and build again. [CUSTOMIZING.md](CUSTOMIZING.md) shows where each kind of change goes, with an example commit for each.
 
 ## Set Up
 
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.2.0 https://github.com/JEdelstein25/mfmap tools/mfmap
+git clone --branch v0.2.1 https://github.com/JEdelstein25/mfmap tools/mfmap
 tools/mfmap/mfmap parse app -cf app/cpy -ce cpy
 tools/mfmap/mfmap serve
 ```
