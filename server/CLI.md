@@ -62,9 +62,9 @@ The CLI client has no editor UI and returns empty results for editor requests.
 
 `graph` reads program paths from stdin, one per line, and prints each program's graph output (the
 same object as `analysis --graph`) as one line of JSON, in order. Java start-up and warm-up are
-paid once instead of once per program: on CardDemo, a 90-line program takes about 2 s on its own
+paid once instead of once per program: a 90-line program takes about 2 s on its own
 and about 0.1 s in a warm process. It accepts `-d`, `-cf` and `-ce` like `analysis`.
 
 ```sh
-find app -iname '*.cbl' | java -jar engine/target/server.jar graph -cf app/cpy -ce cpy > graphs.jsonl
+find src -iname '*.cbl' | java -jar engine/target/server.jar graph -cf src/copybooks -ce cpy > graphs.jsonl
 ```

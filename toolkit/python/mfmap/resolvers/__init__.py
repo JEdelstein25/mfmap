@@ -10,8 +10,8 @@ relationships in the store's ``entities`` and ``relationships`` tables.
 
 Each module in this package is one resolver: it defines ``NAME`` and ``resolve(ctx)``, which yields
 ``Entity`` and ``Relationship`` facts. Endpoints are written ``type:name``, such as
-``program:COACTUPC``, ``transaction:CAUP``, ``screen:COSGN00.COSGN0A``, ``dataset:AWS.ACCTDATA``
-or ``paragraph:COACTUPC.2000-PROCESS``. To resolve something new, add a module here. Facts
+``program:ACCTUPD``, ``transaction:AUPD``, ``screen:ACCTSET.ACCTMAP``, ``dataset:PROD.ACCOUNTS``
+or ``paragraph:ACCTUPD.2000-PROCESS``. To resolve something new, add a module here. Facts
 recorded with ``mfmap record`` have the resolver name ``agent`` and are kept when resolvers run
 again.
 """

@@ -39,7 +39,7 @@ def source(store: str | os.PathLike, path: str, line: int, context: int = 12) ->
     return {"path": path, "line": line, "start": start, "lines": lines[start - 1: line + context]}
 
 
-def make_handler(store: Path, spec: Optional[str]):
+def make_handler(store: Path, plan: Optional[str]):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -58,7 +58,7 @@ def make_handler(store: Path, spec: Optional[str]):
             if url.path in ("/", "/index.html"):
                 self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             elif url.path == "/api/report":
-                body = {**report(store), "backlog": backlog(store, spec)}
+                body = {**report(store), "backlog": backlog(store, plan)}
                 self.send(200, json.dumps(body).encode(), "application/json")
             elif url.path == "/api/source":
                 found = source(store, query.get("path", ""), int(query.get("line", "1")))
@@ -82,8 +82,8 @@ def make_handler(store: Path, spec: Optional[str]):
 
 
 def serve(store: str | os.PathLike, host: str = "127.0.0.1", port: int = 8765,
-          spec: Optional[str] = None) -> None:
+          plan: Optional[str] = None) -> None:
     store = Path(store).resolve()
-    server = ThreadingHTTPServer((host, port), make_handler(store, spec))
+    server = ThreadingHTTPServer((host, port), make_handler(store, plan))
     print(f"report for {store} at http://{host}:{port}/", flush=True)
     server.serve_forever()

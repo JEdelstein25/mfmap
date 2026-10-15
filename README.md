@@ -23,8 +23,8 @@ It targets IBM Enterprise COBOL with Db2, CICS and IMS. It is a starting point t
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.3.2 https://github.com/JEdelstein25/mfmap tools/mfmap
-tools/mfmap/mfmap parse app -cf app/cpy -ce cpy
+git clone --branch v0.4.0 https://github.com/JEdelstein25/mfmap tools/mfmap
+tools/mfmap/mfmap parse src -cf src/copybooks -ce cpy
 tools/mfmap/mfmap serve
 ```
 
@@ -39,6 +39,7 @@ Add `tools/mfmap`, `.mfmap/*`, `!.mfmap/notes.md` and `!.mfmap/questions.json` t
 - Resolvers then connect what the parser found to the rest of the repository: CICS transactions to the programs they start, programs to the screens they send, jobs to the programs they run and the datasets they use, and paragraphs to the paragraphs they perform. Everything goes into `.mfmap/map.db`. `mfmap record` adds what needs judgment, such as which paragraphs hold business logic.
 - `mfmap facts` prints programs, calls, data access, files, commit points, stored procedures, entities and relationships as JSON.
 - `mfmap crosscheck` compares statement counts with a text search that does not use the parser.
+- `mfmap check` validates the migration plan, `migration.json`, against [its schema](schema/migration-v1.schema.json) and the map.
 - `mfmap question`, `questions` and `answer` record open questions and their answers; `mfmap note` adds a note.
 
 [toolkit/python/README.md](toolkit/python/README.md) describes every command and the Python API. [server/CLI.md](server/CLI.md) describes the parser's own command line.

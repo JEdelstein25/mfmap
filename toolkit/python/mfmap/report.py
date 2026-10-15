@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: EPL-2.0
 """The pages ``mfmap serve`` shows, as Markdown: Notes (open questions for a person and the
 agent's notes), Parser (what the parser read and found) and Backlog (every unit in
-``migration.json``). ``mfmap report`` prints the first two."""
+``migration.json``, checked with ``mfmap check``). ``mfmap report`` prints the first two."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from . import plan
 from . import procedures as sp
 from . import questions
 from .store import connect, latest_files
@@ -37,15 +38,6 @@ def add_note(store: str | os.PathLike, text: str) -> Path:
 
 def plural(n: int, noun: str) -> str:
     return f"{n} {noun}" + ("" if n == 1 else "s")
-
-
-def spec_path(store: Path, root: str, spec: Optional[str]) -> Optional[Path]:
-    # migration-spec.json is the name before 0.3.2.
-    for candidate in [spec, *(base / name for base in (Path(root), store.parent)
-                              for name in ("migration.json", "migration-spec.json"))]:
-        if candidate and Path(candidate).is_file():
-            return Path(candidate)
-    return None
 
 
 def report(store: str | os.PathLike) -> dict:
@@ -247,113 +239,65 @@ def procedure_section(conn, proc_calls, rel) -> list[str]:
     return out
 
 
-def pick(obj, *keys):
-    """The value of the first key in ``obj`` that matches one of ``keys`` ignoring case, ``_`` and
-    ``-``, since the agent chooses the exact field names in migration.json."""
-    if isinstance(obj, dict):
-        for key, value in obj.items():
-            if key.lower().replace("_", "").replace("-", "") in keys:
-                return value
-    return None
+def endpoint(value: str) -> str:
+    """An endpoint as Markdown: its name in code, with its type."""
+    kind, _, name = value.partition(":")
+    return f"`{name}` ({kind})" if name else f"`{value}`"
 
 
-def name(value) -> str:
-    if isinstance(value, dict):
-        return str(pick(value, "id", "name", "unit", "resource", "program") or json.dumps(value))
-    return str(value)
-
-
-def load_spec(path: Optional[Path], rel) -> tuple[Optional[dict], Optional[str]]:
-    """The spec, or a Markdown line saying why there is no backlog yet."""
-    if not path:
-        return None, "_Not ready. It appears here once `migration.json` has units._\n"
-    try:
-        spec = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        return None, f"Could not read `{rel(str(path))}`: {e}\n"
-    if not pick(spec, "units", "backlog"):
-        return None, f"_Not ready. `{rel(str(path))}` has no units yet._\n"
-    return spec, None
-
-
-def by_wave(units: list) -> list[tuple[str, list]]:
-    waves = collections.defaultdict(list)
-    for u in units:
-        waves[pick(u, "wave", "wavenumber") or "unassigned"].append(u)
-    order = sorted(waves, key=lambda w: (not str(w).isdigit(), int(w) if str(w).isdigit() else 0, str(w)))
-    return [(f"Wave {w}" if str(w).isdigit() else str(w), waves[w]) for w in order]
-
-
-def questions_section(spec: dict) -> list[str]:
-    questions = pick(spec, "openquestions", "questions") or []
-    if not questions:
-        return []
-    out = ["### Open Questions\n"]
-    for q in questions:
-        text = q if isinstance(q, str) else pick(q, "question", "text") or json.dumps(q)
-        default = pick(q, "default", "defaultassumption") if isinstance(q, dict) else None
-        out.append(f"- {text}" + (f" _Default: {default}_" if default else ""))
+def unit_section(u: dict, notes: Path, rel) -> list[str]:
+    out = [f"### {u['id']} {u['name']}\n"]
+    out.append("- **Programs:** " + ", ".join(endpoint(p) for p in u["programs"]))
+    for label, key in (("Entry points", "entryPoints"), ("Reads", "reads"), ("Writes", "writes")):
+        if u.get(key):
+            out.append(f"- **{label}:** " + ", ".join(endpoint(e) for e in u[key]))
+    if u.get("dependencies"):
+        out.append("- **Depends on:**")
+        out += [f"  - {d['unit']} for {endpoint(d['on'])}: {d['handling']}" for d in u["dependencies"]]
+    if u.get("interfaces"):
+        out.append("- **Interfaces:**")
+        for i in u["interfaces"]:
+            other = f" with {i['with']}" if i.get("with") else ""
+            where = f" ({i['evidence']})" if i.get("evidence") else ""
+            layout = endpoint(i["layout"]) if ":" in i["layout"] and " " not in i["layout"] else i["layout"]
+            out.append(f"  - {i['direction'].capitalize()} {i['name']}{other}: {layout}{where}")
+    if u.get("acceptanceChecks"):
+        out.append("- **Acceptance checks:**")
+        out += [f"  - {c['description']}" + (f" (data: `{c['data']}`)" if c.get("data") else "")
+                for c in u["acceptanceChecks"]]
+    if notes.is_file():
+        out.append(f"\nFrom `{rel(str(notes))}`:\n")
+        out += [re.sub(r"^#{1,6} ", "#### ", line) for line in notes.read_text(encoding="utf-8").splitlines()]
     return out + [""]
 
 
-def label(key: str) -> str:
-    words = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", key).replace("_", " ").replace("-", " ")
-    return words[:1].upper() + words[1:].lower()
-
-
-def field(key: str, value, indent: str = "") -> list[str]:
-    """A unit field as Markdown list items: short lists on one line, longer ones and objects
-    nested one level. Empty fields are left out."""
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return [f"{indent}- **{label(key)}:** {value}"]
-    if value in ([], {}, ""):
-        return []
-    if isinstance(value, list) and all(not isinstance(v, (dict, list)) and len(str(v)) <= 40 for v in value):
-        return [f"{indent}- **{label(key)}:** " + ", ".join(str(v) for v in value)]
-    out = [f"{indent}- **{label(key)}:**"]
-    items = value.items() if isinstance(value, dict) else enumerate(value)
-    for k, v in items:
-        if isinstance(v, dict):
-            text = "; ".join(f"{label(a)}: {b if not isinstance(b, (dict, list)) else json.dumps(b)}"
-                             for a, b in v.items())
-        elif isinstance(v, list):
-            text = ", ".join(str(x) for x in v)
-        else:
-            text = str(v)
-        out.append(f"{indent}  - " + (f"**{label(k)}:** {text}" if isinstance(k, str) else text))
-    return out
-
-
-def backlog(store: str | os.PathLike, spec: Optional[str] = None) -> str:
-    """Every unit in migration.json with all of its fields and its units/<ID>.md file."""
+def backlog(store: str | os.PathLike, explicit: Optional[str] = None) -> str:
+    """Every unit in migration.json by wave, with its notes file, and any problems mfmap check finds."""
     store = Path(store).resolve()
     conn = connect(store)
     try:
         run = conn.execute("SELECT root FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        root = run["root"] if run else str(store.parent)
+        rel = lambda p: os.path.relpath(p, root)  # noqa: E731
+        path = plan.find(store, root, explicit)
+        out = ["# Backlog\n"]
+        if not path:
+            return "\n".join(out + ["_Not ready. It appears here once `migration.json` has units._\n"])
+        result = plan.check(path, conn)
     finally:
         conn.close()
-    root = run["root"] if run else str(store.parent)
-    rel = lambda p: os.path.relpath(p, root)  # noqa: E731
-    path = spec_path(store, root, spec)
-    out = ["# Backlog\n"]
-    data, missing = load_spec(path, rel)
-    if missing:
-        return "\n".join(out + [missing])
-    units = pick(data, "units", "backlog")
-    out.append(f"{len(units)} units from `{rel(str(path))}`, in build order.\n")
-    for wave, members in by_wave(units):
-        out.append(f"## {wave}\n")
-        for u in members:
-            unit_id = name(u)
-            out.append(f"### {unit_id} {pick(u, 'name', 'title') or ''}".rstrip() + "\n")
-            if isinstance(u, dict):
-                for key, value in u.items():
-                    if key.lower() not in ("id", "name", "title", "wave"):
-                        out += field(key, value)
-            notes = path.parent / "units" / f"{unit_id}.md"
-            if notes.is_file():
-                out.append(f"\nFrom `{rel(str(notes))}`:\n")
-                for line in notes.read_text(encoding="utf-8").splitlines():
-                    out.append(re.sub(r"^#{1,6} ", "#### ", line))
-            out.append("")
-    return "\n".join(out + questions_section(data))
+    out += plan.report(result, rel)
+    if result.plan is None:
+        return "\n".join(out)
+    units = result.plan["units"]
+    target = f" for {result.plan['target']}" if result.plan.get("target") else ""
+    out.append(f"{plural(len(units), 'unit')}{target} from `{rel(str(path))}`, in build order.\n")
+    for wave in sorted({u["wave"] for u in units}):
+        out.append(f"## Wave {wave}\n")
+        for u in units:
+            if u["wave"] == wave:
+                out += unit_section(u, path.parent / "units" / f"{u['id']}.md", rel)
+    if result.plan.get("excluded"):
+        out.append("## Not Migrated\n")
+        out += [f"- {endpoint(e['program'])}: {e['reason']}" for e in result.plan["excluded"]]
+    return "\n".join(out)

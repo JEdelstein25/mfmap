@@ -63,7 +63,7 @@ class ModelTest(unittest.TestCase):
         read = next(s for s in self.program.cics if s.verb == "READ")
         self.assertEqual(
             read.source,
-            "EXEC CICS READ DATASET('ACCTDAT') INTO(ACCT-REC)\n        RIDFLD(ACCT-KEY) RESP(WS-RESP)\n    END-EXEC",
+            "EXEC CICS READ DATASET('ACCTFIL') INTO(ACCT-REC)\n        RIDFLD(ACCT-KEY) RESP(WS-RESP)\n    END-EXEC",
         )
 
     def test_call_edges(self):
@@ -73,7 +73,7 @@ class ModelTest(unittest.TestCase):
             ("CALL", "SAMPSUB", "value", "WS-PGM-NAME", ()),
             ("LINK", "SAMPLNK", "literal", "'SAMPLNK'", ()),
             ("XCTL", None, "unresolved", "WS-NEXT-PGM", ("SAMPNXT",)),
-            ("SQL CALL", "CARDDEMO.POST_TRAN", "literal", "CARDDEMO.POST_TRAN", ()),
+            ("SQL CALL", "BANK.POST_TRAN", "literal", "BANK.POST_TRAN", ()),
             # A procedure named by a host variable resolves through the item's VALUE.
             ("SQL CALL", "SAMPSUB", "value", "WS-PGM-NAME", ()),
         ])
@@ -82,11 +82,11 @@ class ModelTest(unittest.TestCase):
         access = {(a.store, a.resource, a.mode, a.statement.verb, a.paragraph.name)
                   for a in cg.data_access(self.program)}
         self.assertEqual(access, {
-            ("db2", "CARDDEMO.CUSTOMER", "read", "OPEN", "2000-DB2"),
-            ("db2", "CARDDEMO.CUSTOMER", "read", "FETCH", "2000-DB2"),
-            ("db2", "CARDDEMO.AUDIT_LOG", "write", "INSERT", "2000-DB2"),
-            ("vsam", "ACCTDAT", "read", "READ", "3000-CICS"),
-            ("vsam", "ACCTDAT", "write", "REWRITE", "3000-CICS"),
+            ("db2", "BANK.CUSTOMER", "read", "OPEN", "2000-DB2"),
+            ("db2", "BANK.CUSTOMER", "read", "FETCH", "2000-DB2"),
+            ("db2", "BANK.AUDIT_LOG", "write", "INSERT", "2000-DB2"),
+            ("vsam", "ACCTFIL", "read", "READ", "3000-CICS"),
+            ("vsam", "ACCTFIL", "write", "REWRITE", "3000-CICS"),
             ("ims", "PAUTSUM0", "read", "GU", "4000-IMS"),
             ("ims", "PAUTDTL1", "write", "ISRT", "4000-IMS"),
             ("file", "ACCTDD", "read", "OPEN", "1000-READ"),
@@ -99,7 +99,7 @@ class ModelTest(unittest.TestCase):
         })
         dynamic = [a for a in cg.data_access(self.program) if a.mode == "unknown"]
         self.assertEqual({(a.resolved, a.expression, a.candidates) for a in dynamic},
-                         {("unresolved", "WS-CUST-NAME", ("DELETE FROM CARDDEMO.TEMP_TRAN",))})
+                         {("unresolved", "WS-CUST-NAME", ("DELETE FROM BANK.TEMP_TRAN",))})
 
     def test_commit_points(self):
         self.assertEqual([(c.kind, c.statement.location.line) for c in cg.commit_points(self.program)],
@@ -108,18 +108,18 @@ class ModelTest(unittest.TestCase):
     def test_procedures_from_ddl(self):
         from mfmap import procedures as sp
         defined = {d.name: d for d in sp.procedures(sp.find_ddl(FIXTURES / "ddl"))}
-        post = defined["CARDDEMO.POST_TRAN"]
+        post = defined["BANK.POST_TRAN"]
         self.assertEqual((post.language, post.program, post.result_sets, post.line), ("COBOL", "POSTTRN", 1, 2))
         self.assertEqual(post.parameters, ("IN CUST_ID INTEGER", "INOUT AMOUNT DECIMAL(9, 2)"))
         # A bare EXTERNAL means the program has the procedure's name; EXTERNAL SECURITY does not.
-        self.assertEqual(defined["CARDDEMO.SAMPSUB"].program, "SAMPSUB")
-        purge = defined["CARDDEMO.PURGE_AUDIT"]
+        self.assertEqual(defined["BANK.SAMPSUB"].program, "SAMPSUB")
+        purge = defined["BANK.PURGE_AUDIT"]
         self.assertEqual((purge.language, purge.program), ("SQL", None))
-        self.assertEqual(purge.writes, ("CARDDEMO.AUDIT_LOG", "CARDDEMO.PURGE_HIST"))
-        self.assertEqual(purge.reads, ("CARDDEMO.AUDIT_LOG", "CARDDEMO.AUDIT_ARCH"))
-        self.assertEqual(purge.calls, ("CARDDEMO.POST_TRAN",))
+        self.assertEqual(purge.writes, ("BANK.AUDIT_LOG", "BANK.PURGE_HIST"))
+        self.assertEqual(purge.reads, ("BANK.AUDIT_LOG", "BANK.AUDIT_ARCH"))
+        self.assertEqual(purge.calls, ("BANK.POST_TRAN",))
         # An unqualified CALL gets its schema from bind options, so it matches by name alone.
-        self.assertIs(sp.match("SAMPSUB", defined.values()), defined["CARDDEMO.SAMPSUB"])
+        self.assertIs(sp.match("SAMPSUB", defined.values()), defined["BANK.SAMPSUB"])
         self.assertIsNone(sp.match("OTHER.SAMPSUB", defined.values()))
 
     def test_crosscheck_counts_match(self):

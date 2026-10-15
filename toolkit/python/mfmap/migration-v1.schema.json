@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JEdelstein25/mfmap/schema/migration-v1.schema.json",
+  "title": "mfmap migration plan, version 1",
+  "description": "The units a COBOL application is rewritten in, in build order. Endpoints use the same type:name IDs as the entities and relationships in mfmap's store. Open questions are kept with mfmap question, not here. `mfmap check` validates a file against this schema and checks what a schema cannot.",
+  "type": "object",
+  "required": ["version", "units"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "target": {
+      "type": "string",
+      "description": "The language and platform the application is rewritten for."
+    },
+    "units": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/unit" }
+    },
+    "excluded": {
+      "type": "array",
+      "description": "Programs that are not migrated, such as utilities replaced by the platform or code that no longer runs.",
+      "items": {
+        "type": "object",
+        "required": ["program", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "program": { "$ref": "#/$defs/program" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "endpoint": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*:.+$",
+      "description": "type:name, such as program:NAME, transaction:ID, screen:MAPSET.MAP, job:NAME, db2:SCHEMA.TABLE, vsam:FILE or dataset:DSN."
+    },
+    "program": {
+      "type": "string",
+      "pattern": "^program:.+$"
+    },
+    "evidence": {
+      "type": "string",
+      "pattern": "^.+:[0-9]+$",
+      "description": "file:line, relative to the repository root."
+    },
+    "unit": {
+      "type": "object",
+      "required": ["id", "name", "wave", "programs"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "description": "Also the name of the unit's notes file, units/<id>.md."
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "wave": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Build order. A unit depends only on units in earlier waves."
+        },
+        "programs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/program" }
+        },
+        "entryPoints": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "How the unit is started: transactions, jobs, APIs or callers outside the unit.",
+          "items": { "$ref": "#/$defs/endpoint" }
+        },
+        "reads": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/endpoint" }
+        },
+        "writes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/endpoint" }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["unit", "on", "handling"],
+            "additionalProperties": false,
+            "properties": {
+              "unit": { "type": "string", "description": "ID of a unit in an earlier wave." },
+              "on": {
+                "$ref": "#/$defs/endpoint",
+                "description": "What this unit needs from it: a program it calls or data it reads or writes."
+              },
+              "handling": {
+                "type": "string",
+                "minLength": 1,
+                "description": "How the rewrite handles the dependency, such as calling the other unit's service or sharing a table until both are rewritten."
+              }
+            }
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["direction", "name", "layout"],
+            "additionalProperties": false,
+            "properties": {
+              "direction": { "enum": ["provides", "uses"] },
+              "name": { "type": "string", "minLength": 1 },
+              "layout": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The record layout: a copybook endpoint such as copybook:NAME, or the layout written out."
+              },
+              "with": {
+                "type": "string",
+                "description": "The other unit's ID, for an interface between units."
+              },
+              "evidence": { "$ref": "#/$defs/evidence" }
+            }
+          }
+        },
+        "acceptanceChecks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["description"],
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What to compare between the rewrite and the current behavior."
+              },
+              "data": {
+                "type": "string",
+                "description": "Sample data in the repository to compare with, if there is any."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

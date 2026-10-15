@@ -24,12 +24,12 @@ application's repository, run the parser over every `.cbl` and `.cob` file:
 ```sh
 pip install ./toolkit/python
 export MFMAP_JAR=$PWD/server/engine/target/server.jar
-mfmap parse app -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j 6
+mfmap parse src -cf src/copybooks -cf src/maps -ce cpy -ce CPY -j 6
 ```
 
 `-j` sets how many parser processes run at once (default 4). Each one stays up and parses program
 after program, so Java start-up is paid once per process, and a separate pool of Python processes
-records the results. CardDemo's 44 programs take about 9 seconds with `-j 4`; 440 take about 30.
+records the results. 44 programs take about 9 seconds with `-j 4`; 440 take about 30.
 A parser process that crashes or takes longer than 15 minutes on one program is replaced, and that
 program is recorded as crashed.
 
@@ -69,10 +69,9 @@ The page refreshes while a parse runs or the notes change. It has three tabs:
   copybooks the parser supplied or could not find, parse errors grouped by message, what the parser
   found (paragraphs, statements, data items, calls by how their targets were resolved, data access
   by kind of store, calls set at run time) and the count check against the text scan.
-- **Backlog** lists every unit in wave order with all of its fields from `migration.json`
-  (short lists on one line, longer ones and objects as nested bullets, empty fields left out)
-  followed by its `units/<unit ID>.md` file. The file is looked for in the parse root and next to
-  the store; `--spec` names another.
+- **Backlog** lists every unit in `migration.json` in wave order, followed by its
+  `units/<unit ID>.md` file, and any problems `mfmap check` finds. The file is looked for in the
+  parse root and next to the store; `--plan` names another.
 
 Any `file.cbl:line` reference opens the source around that line. The server binds to 127.0.0.1;
 reach it from elsewhere through a tunnel or port forward. To keep the notes and questions in Git
@@ -91,7 +90,7 @@ while ignoring the rest of the store, add `.mfmap/*`, `!.mfmap/notes.md` and
 
   ```sh
   mfmap fetch-mq-copybooks --out mq-copybooks --accept-license
-  mfmap parse app -cf app/cpy -cf mq-copybooks -ce cpy
+  mfmap parse src -cf src/copybooks -cf mq-copybooks -ce cpy
   ```
 
   The command writes the 64-bit copybooks as `NAME.cpy`, IBM's English license files under
@@ -101,7 +100,7 @@ while ignoring the rest of the store, add `.mfmap/*`, `!.mfmap/notes.md` and
 
 ```sh
 mfmap summary              # parse rate, statement counts, most common errors
-mfmap crosscheck -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY
+mfmap crosscheck -cf src/copybooks -cf src/maps -ce cpy -ce CPY
 mfmap facts --root . > facts.json   # programs, calls, data access, files, commits, procedures
 ```
 
@@ -116,7 +115,7 @@ difference before trusting either one.
 import mfmap as cg
 
 project = cg.Project.load(".mfmap")   # or a folder of graph files
-p = project.program("COACTUPC")
+p = project.program("ACCTUPD")
 
 item = p.data_item("ACCT-CURR-BAL")
 item.pic, item.usage, item.level, item.copybook, item.redefines, item.occurs, item.sync
@@ -152,9 +151,9 @@ the ones with no `CREATE PROCEDURE` in the repository.
 Resolvers write entities and relationships to the store's `entities` and `relationships` tables,
 each with the file and line it came from and the resolver that wrote it. `mfmap parse` runs them
 all at the end; `mfmap resolve [names]` runs them again, replacing what each one wrote before.
-Endpoints are written `type:name`, such as `program:COACTUPC`, `transaction:CAUP`,
-`screen:COSGN00.COSGN0A`, `job:POSTTRAN`, `dataset:AWS.ACCTDATA` or
-`paragraph:COACTUPC.2000-PROCESS`.
+Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`,
+`screen:ACCTSET.ACCTMAP`, `job:NIGHTLY`, `dataset:PROD.ACCOUNTS` or
+`paragraph:ACCTUPD.2000-PROCESS`.
 
 - `programs`: copybooks each program includes, calls between programs, data access, PERFORM and GO TO between paragraphs, CICS
   screens sent and received, and transactions started or returned to.
@@ -170,13 +169,44 @@ To resolve something else, such as API definitions or a scheduler's job order, a
 files. For what needs judgment, such as which paragraphs hold business logic, record it:
 
 ```sh
-mfmap record business-logic paragraph:COACTUPC.2000-PROCESS --note "Applies the interest rate" \
-  --evidence app/cbl/COACTUPC.cbl:812
-mfmap record exposes api:/accounts program:INQACC --evidence src/api/accounts.yaml:12
+mfmap record business-logic paragraph:ACCTUPD.2000-PROCESS --note "Applies the interest rate" \
+  --evidence src/cobol/ACCTUPD.cbl:812
+mfmap record exposes api:/accounts program:ACCTINQ --evidence src/api/accounts.yaml:12
 ```
 
 Recorded facts belong to the resolver `agent` and stay when resolvers run again. `mfmap facts`
 includes all entities and relationships, and the Parser tab counts them.
+
+### The migration plan
+
+`migration.json` holds the units the application is rewritten in, in build order. It follows
+[schema/migration-v1.schema.json](../../schema/migration-v1.schema.json):
+
+```json
+{
+  "version": 1,
+  "target": "Java on Kubernetes",
+  "units": [{
+    "id": "accounts",
+    "name": "Account maintenance",
+    "wave": 2,
+    "programs": ["program:ACCTUPD", "program:ACCTINQ"],
+    "entryPoints": ["transaction:AUPD"],
+    "reads": ["db2:BANK.ACCOUNT"],
+    "writes": ["db2:BANK.ACCOUNT"],
+    "dependencies": [{"unit": "customers", "on": "program:CUSTINQ", "handling": "Call the customer service"}],
+    "interfaces": [{"direction": "provides", "name": "account record", "layout": "copybook:ACCTREC"}],
+    "acceptanceChecks": [{"description": "Balances match the current system for every sample account"}]
+  }],
+  "excluded": [{"program": "program:OLDRPT", "reason": "No job or transaction runs it"}]
+}
+```
+
+Endpoints use the same `type:name` IDs as the store, and a unit has only these fields; anything
+else about a unit goes in `units/<unit ID>.md`. `mfmap check` validates the file against the schema
+and checks what a schema cannot: unit IDs are unique, a unit depends only on units in earlier
+waves, every parsed program is in exactly one unit or excluded with a reason, and every endpoint is
+in the map. It exits with status 1 when there are problems, and the Backlog tab lists them.
 
 ### Dynamic SQL and commit points
 

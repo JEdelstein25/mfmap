@@ -16,7 +16,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import mq, questions, resolvers
+from . import mq, plan, questions, resolvers
 from . import procedures as sp
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, commit_points, data_access
@@ -162,14 +162,14 @@ def main(argv=None) -> int:
     v.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
     v.add_argument("--host", default="127.0.0.1")
     v.add_argument("--port", type=int, default=8765)
-    v.add_argument("--plan", "--spec", dest="spec", help="migration.json (default: next to the store or in the parse root)")
+    v.add_argument("--plan", help="migration.json (default: in the parse root or next to the store)")
 
     r = commands.add_parser("report", help="print the Notes and Parser tabs as Markdown")
     r.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
 
     b = commands.add_parser("backlog", help="print every backlog unit in full as Markdown")
     b.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
-    b.add_argument("--plan", "--spec", dest="spec", help="migration.json (default: next to the store or in the parse root)")
+    b.add_argument("--plan", help="migration.json (default: in the parse root or next to the store)")
 
     n = commands.add_parser("note", help="add a timestamped note to the report")
     n.add_argument("text", help="Markdown; file:line references link to the source")
@@ -196,11 +196,15 @@ def main(argv=None) -> int:
 
     rc = commands.add_parser("record", help="record an entity or relationship you found yourself")
     rc.add_argument("kind", help="what it is, such as business-logic, exposes or reads")
-    rc.add_argument("source", help="type:name, such as paragraph:COACTUPC.2000-PROCESS")
+    rc.add_argument("source", help="type:name, such as paragraph:ACCTUPD.2000-PROCESS")
     rc.add_argument("target", nargs="?", help="type:name; leave out to record a fact about the source")
     rc.add_argument("--note", help="a one-line summary")
     rc.add_argument("--evidence", help="file:line")
     rc.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+
+    ck = commands.add_parser("check", help="check migration.json against its schema and the map")
+    ck.add_argument("--plan", help="migration.json (default: in the parse root or next to the store)")
+    ck.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
 
     s = commands.add_parser("summary", help="parse rate, counts and common errors")
     s.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
@@ -248,11 +252,32 @@ def main(argv=None) -> int:
               + f"; store {args.store}")
         return 1 if statuses["crash"] else 0
     if args.command == "serve":
-        serve(args.store, args.host, args.port, args.spec)
+        serve(args.store, args.host, args.port, args.plan)
         return 0
     if args.command == "report":
         print(report_markdown(report(args.store)))
         return 0
+    if args.command == "check":
+        from .store import connect
+        store = Path(args.store).resolve()
+        conn = connect(store) if (store / "map.db").is_file() else None
+        try:
+            last = conn.execute("SELECT root FROM runs ORDER BY id DESC LIMIT 1").fetchone() if conn else None
+            path = plan.find(store, last["root"] if last else os.getcwd(), args.plan)
+            if not path:
+                parser.error("no migration.json in the parse root or next to the store; pass --plan")
+            result = plan.check(path, conn)
+        finally:
+            if conn:
+                conn.close()
+        for e in result.errors:
+            print(f"error: {e}")
+        for w in result.warnings:
+            print(f"warning: {w}")
+        if not result.errors:
+            units = len(result.plan["units"])
+            print(f"{path.name}: {units} unit{'s' if units != 1 else ''}, no problems")
+        return 1 if result.errors else 0
     if args.command == "resolve":
         try:
             counts = resolvers.run(args.store, args.names or None)
@@ -280,7 +305,7 @@ def main(argv=None) -> int:
         print(f"{entry['id']}: " + ("answered" if entry["answer"] else "reopened"))
         return 0
     if args.command == "backlog":
-        print(backlog(args.store, args.spec))
+        print(backlog(args.store, args.plan))
         return 0
     if args.command == "note":
         print(f"added to {add_note(args.store, args.text)}")

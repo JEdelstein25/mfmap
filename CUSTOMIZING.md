@@ -22,6 +22,8 @@ When mfmap fails on your code or leaves something out, the fix goes in one of th
 | A kind of relationship mfmap doesn't find, such as API definitions, CICS definitions in another format, or a scheduler's job order | Add a resolver module to `toolkit/python/mfmap/resolvers/`, following `cics.py` or `jcl.py`. | `cics.py` and `jcl.py` in `toolkit/python/mfmap/resolvers/` |
 | A call, read, write or commit point is missing or wrong in `mfmap facts`, but the graph has the detail | `toolkit/python/mfmap/model.py` (`call_edges`, `data_access`, `commit_points`). New kinds of facts also need a table in `store.py`, a line on the Parser tab in `report.py`, and a pattern in `crosscheck.py` if a text search can count them. | Python half of `8fd1ec34d` |
 
+The migration plan's format is [schema/migration-v1.schema.json](schema/migration-v1.schema.json). If you change it, copy it to `toolkit/python/mfmap/`; a test fails until the copies match.
+
 ## How to Make a Change
 
 1. **Reproduce it small.** Write the smallest program that shows the problem and look at the parser's output for it:
