@@ -623,10 +623,16 @@ class Cics(Statement):
 
 
 class Sql(Statement):
-    """EXEC SQL. For OPEN, FETCH and CLOSE, ``tables`` comes from the cursor's DECLARE."""
+    """EXEC SQL. For OPEN, FETCH and CLOSE, ``tables`` comes from the cursor's DECLARE.
+    ``procedure`` is a CALL's procedure name or host variable (with its colon); ``statement_name``
+    names a prepared statement; ``sql_source`` is where PREPARE or EXECUTE IMMEDIATE gets its SQL
+    text: a host variable (with its colon) or a string literal."""
 
     statement_type = property(lambda self: self.node.data.get("statementType", ""))
     cursor = property(lambda self: self.node.data.get("cursorName"))
+    procedure = property(lambda self: self.node.data.get("procedureName"))
+    statement_name = property(lambda self: self.node.data.get("statementName"))
+    sql_source = property(lambda self: self.node.data.get("sqlSource"))
     verb = property(lambda self: self.statement_type.split()[0] if self.statement_type else "EXEC")
 
     @property
@@ -725,11 +731,12 @@ class FileControl:
 
 @dataclass(frozen=True)
 class CallEdge:
-    """A transfer of control to another program: CALL, or EXEC CICS LINK, XCTL or LOAD."""
+    """A transfer of control to another program: CALL, EXEC CICS LINK, XCTL or LOAD, or a Db2
+    stored procedure CALL (via ``SQL CALL``; the target is the procedure name, not its program)."""
 
     program: Program
     statement: Statement
-    via: str  # CALL, LINK, XCTL or LOAD
+    via: str  # CALL, LINK, XCTL, LOAD or SQL CALL
     target: Optional[str]
     resolved: str  # literal, value or unresolved
     expression: str
@@ -744,9 +751,10 @@ class Access:
     statement: Statement
     store: str  # db2, vsam, file, ims or queue
     resource: Optional[str]
-    mode: str  # read, write or read-write
+    mode: str  # read, write, read-write, or unknown for dynamic SQL
     resolved: str  # literal, value, declared or unresolved
     expression: str
+    candidates: tuple = ()  # for dynamic SQL: SQL text the program MOVEs into the host variable
 
     @property
     def paragraph(self) -> Optional[Paragraph]:
@@ -763,6 +771,15 @@ def call_edges(program: Program) -> Iterator[CallEdge]:
             target, how = program.resolve(s.program_name)
             moved = tuple(program.moved_values(s.program_name)) if target is None else ()
             yield CallEdge(program, s, s.verb, target, how, s.program_name, moved)
+    for s in program.sql:
+        if s.statement_type == "CALL" and s.procedure:
+            if s.procedure.startswith(":"):
+                name = s.procedure[1:]
+                target, how = program.resolve(name)
+                moved = tuple(program.moved_values(name)) if target is None else ()
+                yield CallEdge(program, s, "SQL CALL", target, how, name, moved)
+            else:
+                yield CallEdge(program, s, "SQL CALL", s.procedure, "literal", s.procedure)
 
 
 def data_access(program: Program) -> Iterator[Access]:
@@ -771,6 +788,15 @@ def data_access(program: Program) -> Iterator[Access]:
         if mode and s.statement_type != "DECLARE CURSOR":
             for table in s.tables:
                 yield Access(program, s, "db2", table, mode, "declared", table)
+        elif s.statement_type in ("PREPARE", "EXECUTE IMMEDIATE") and s.sql_source:
+            # Dynamic SQL: the tables are only known at run time.
+            source = s.sql_source
+            if source.startswith(":"):
+                source = source[1:]
+                moved = tuple(program.moved_values(source))
+            else:
+                moved = (literal(source) or source,)
+            yield Access(program, s, "db2", None, "unknown", "unresolved", source, moved)
     for s in program.cics:
         if s.verb in CICS_FILE_READS | CICS_FILE_WRITES and s.file_name:
             resource, how = program.resolve(s.file_name)
@@ -795,6 +821,25 @@ def data_access(program: Program) -> Iterator[Access]:
         name = f.assign if f else None
         yield Access(program, s, "file", name, mode, "declared" if name else "unresolved",
                      f.name if f else "")
+
+
+@dataclass(frozen=True)
+class CommitPoint:
+    """Where a unit of work ends: EXEC SQL COMMIT or ROLLBACK, or EXEC CICS SYNCPOINT."""
+
+    program: Program
+    statement: Statement
+    kind: str  # COMMIT, ROLLBACK, SYNCPOINT or SYNCPOINT ROLLBACK
+
+
+def commit_points(program: Program) -> Iterator[CommitPoint]:
+    for s in program.sql:
+        if s.statement_type in ("COMMIT", "ROLLBACK"):
+            yield CommitPoint(program, s, s.statement_type)
+    for s in program.cics:
+        if s.verb == "SYNCPOINT":
+            yield CommitPoint(program, s, "SYNCPOINT ROLLBACK" if s.has("ROLLBACK") or "ROLLBACK" in s.command
+                              else "SYNCPOINT")
 
 
 class Project:

@@ -102,7 +102,10 @@
             "properties": {
               "statementType": { "type": "string" },
               "tables": { "type": "array", "items": { "type": "string" } },
-              "cursorName": { "type": "string" }
+              "cursorName": { "type": "string" },
+              "procedureName": { "type": "string" },
+              "statementName": { "type": "string" },
+              "sqlSource": { "type": "string" }
             }
           }
         },

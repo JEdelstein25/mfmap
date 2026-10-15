@@ -46,7 +46,7 @@ class ModelTest(unittest.TestCase):
         refs = self.program.data_item("WS-CUST-ID").references
         self.assertEqual(
             [(r.location.line, type(r.statement).__name__, r.statement.verb) for r in refs],
-            [(61, "Sql", "DECLARE"), (69, "Sql", "INSERT"), (82, "Dli", "GU")],
+            [(61, "Sql", "DECLARE"), (69, "Sql", "INSERT"), (82, "Dli", "GU"), (89, "Sql", "CALL")],
         )
 
     def test_paragraphs_and_performs(self):
@@ -73,6 +73,9 @@ class ModelTest(unittest.TestCase):
             ("CALL", "SAMPSUB", "value", "WS-PGM-NAME", ()),
             ("LINK", "SAMPLNK", "literal", "'SAMPLNK'", ()),
             ("XCTL", None, "unresolved", "WS-NEXT-PGM", ("SAMPNXT",)),
+            ("SQL CALL", "CARDDEMO.POST_TRAN", "literal", "CARDDEMO.POST_TRAN", ()),
+            # A procedure named by a host variable resolves through the item's VALUE.
+            ("SQL CALL", "SAMPSUB", "value", "WS-PGM-NAME", ()),
         ])
 
     def test_data_access(self):
@@ -90,12 +93,41 @@ class ModelTest(unittest.TestCase):
             ("file", "RPTDD", "write", "OPEN", "1000-READ"),
             ("file", "ACCTDD", "read", "READ", "1000-READ"),
             ("file", "RPTDD", "write", "WRITE", "1000-READ"),
+            # Dynamic SQL: tables unknown; EXECUTE of a prepared statement adds no second row.
+            ("db2", None, "unknown", "PREPARE", "5000-SQL-PROC"),
+            ("db2", None, "unknown", "EXECUTE", "5000-SQL-PROC"),
         })
+        dynamic = [a for a in cg.data_access(self.program) if a.mode == "unknown"]
+        self.assertEqual({(a.resolved, a.expression, a.candidates) for a in dynamic},
+                         {("unresolved", "WS-CUST-NAME", ("DELETE FROM CARDDEMO.TEMP_TRAN",))})
+
+    def test_commit_points(self):
+        self.assertEqual([(c.kind, c.statement.location.line) for c in cg.commit_points(self.program)],
+                         [("COMMIT", 96), ("SYNCPOINT ROLLBACK", 97)])
+
+    def test_procedures_from_ddl(self):
+        from cobolgraph import procedures as sp
+        defined = {d.name: d for d in sp.procedures(sp.find_ddl(FIXTURES / "ddl"))}
+        post = defined["CARDDEMO.POST_TRAN"]
+        self.assertEqual((post.language, post.program, post.result_sets, post.line), ("COBOL", "POSTTRN", 1, 2))
+        self.assertEqual(post.parameters, ("IN CUST_ID INTEGER", "INOUT AMOUNT DECIMAL(9, 2)"))
+        # A bare EXTERNAL means the program has the procedure's name; EXTERNAL SECURITY does not.
+        self.assertEqual(defined["CARDDEMO.SAMPSUB"].program, "SAMPSUB")
+        purge = defined["CARDDEMO.PURGE_AUDIT"]
+        self.assertEqual((purge.language, purge.program), ("SQL", None))
+        self.assertEqual(purge.writes, ("CARDDEMO.AUDIT_LOG", "CARDDEMO.PURGE_HIST"))
+        self.assertEqual(purge.reads, ("CARDDEMO.AUDIT_LOG", "CARDDEMO.AUDIT_ARCH"))
+        self.assertEqual(purge.calls, ("CARDDEMO.POST_TRAN",))
+        # An unqualified CALL gets its schema from bind options, so it matches by name alone.
+        self.assertIs(sp.match("SAMPSUB", defined.values()), defined["CARDDEMO.SAMPSUB"])
+        self.assertIsNone(sp.match("OTHER.SAMPSUB", defined.values()))
 
     def test_crosscheck_counts_match(self):
         scan = TextScan([FIXTURES / "cpy"])
         self.assertEqual(scan.counts(FIXTURES / "SAMPLE.cbl"), graph_counts(self.program))
         self.assertEqual(graph_counts(self.program)["PERFORM"], 5)  # END-PERFORM is not a PERFORM
+        # EXEC SQL CALL is a stored procedure call, not a COBOL CALL.
+        self.assertEqual((graph_counts(self.program)["CALL"], graph_counts(self.program)["SQL CALL"]), (2, 2))
 
     def test_output_names_disambiguate_shared_stems(self):
         names = output_names([Path("a/x/P.cbl"), Path("a/y/P.cbl"), Path("a/Q.cbl")])

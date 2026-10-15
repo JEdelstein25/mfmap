@@ -12,8 +12,9 @@ SPDX-License-Identifier: EPL-2.0
 
 `cobolgraph` reads the output of `server.jar analysis --graph` and gives you typed COBOL programs:
 data items with their clauses, paragraphs, typed statements, and references resolved by node ID.
-It also lists calls between programs and reads and writes of Db2 tables, VSAM files, batch files,
-IMS segments and CICS queues, each with its file and line. It has no dependencies beyond Python 3.9.
+It also lists calls between programs, Db2 stored procedure calls with their definitions, reads
+and writes of Db2 tables, VSAM files, batch files, IMS segments and CICS queues, dynamic SQL, and
+commit points, each with its file and line. It has no dependencies beyond Python 3.9.
 
 ## Parse a source tree
 
@@ -101,12 +102,12 @@ while ignoring the rest of the store, add `.cobolgraph/*`, `!.cobolgraph/notes.m
 ```sh
 cobolgraph summary              # parse rate, statement counts, most common errors
 cobolgraph crosscheck -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY
-cobolgraph facts --root . > facts.json   # programs, calls, data access, files
+cobolgraph facts --root . > facts.json   # programs, calls, data access, files, commits, procedures
 ```
 
 These read the store's latest run; pass a folder of graph files instead to read those.
-`crosscheck` counts CALL, PERFORM, EXEC CICS, EXEC SQL and EXEC DLI with a text scan that does
-not use the parser, and lists every program where the two counts differ. Read both sides of a
+`crosscheck` counts CALL, PERFORM, EXEC CICS, EXEC SQL, EXEC SQL CALL and EXEC DLI with a text
+scan that does not use the parser (a CALL inside EXEC SQL is counted as an SQL CALL only), and lists every program where the two counts differ. Read both sides of a
 difference before trusting either one.
 
 ## Use the model
@@ -127,9 +128,32 @@ for para in p.paragraphs:
 for s in p.cics:                                 # also p.sql, p.dli, p.calls, p.file_io
     s.command, s.option("FILE"), s.paragraph, s.source
 
-project.calls()          # CALL, LINK, XCTL and LOAD edges
+project.calls()          # CALL, LINK, XCTL, LOAD and SQL CALL edges
 project.data_access()    # store, resource, read or write, statement
+cg.commit_points(p)      # EXEC SQL COMMIT and ROLLBACK, EXEC CICS SYNCPOINT
 ```
+
+### Stored procedures
+
+`EXEC SQL CALL` is an edge with `via` `SQL CALL` whose target is the procedure name as written;
+a name in a host variable resolves like a dynamic CALL. `parse` and `facts` read `CREATE
+PROCEDURE` statements from the `.sql`, `.ddl` and `.db2` files under the current folder (and from
+`--ddl` files or folders, for DDL with other names) and match each CALL to its definition: the same
+qualified name, or for an unqualified CALL, whose schema comes from the package's bind options, the
+only definition with that name. For each procedure, `facts` gives its language, parameters, result
+sets and, for an external procedure, the program that implements it (from `EXTERNAL NAME`, or the
+procedure's own name for a bare `EXTERNAL`). That program is an entry point called from SQL. A
+native SQL procedure keeps its logic in the DDL; its `reads`, `writes` and `calls` come from a text
+scan of the body, so check them against it. The Parser tab lists every called procedure and flags
+the ones with no `CREATE PROCEDURE` in the repository.
+
+### Dynamic SQL and commit points
+
+`PREPARE` and `EXECUTE IMMEDIATE` become Db2 access with mode `unknown` and `resolved`
+`unresolved`, since the tables are only known at run time. `expression` names the host variable
+that holds the SQL text and `candidates` lists the literals the program MOVEs into it. `EXECUTE` of
+a prepared statement adds no second row. Commit points (`COMMIT`, `ROLLBACK`, `SYNCPOINT` and
+`SYNCPOINT ROLLBACK`) mark where units of work end.
 
 ### How names are resolved
 

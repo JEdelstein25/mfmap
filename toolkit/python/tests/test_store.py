@@ -64,15 +64,21 @@ class StoreTest(unittest.TestCase):
         calls = conn.execute("SELECT via, target, resolved, line FROM calls ORDER BY line").fetchall()
         self.assertEqual([tuple(c) for c in calls], [
             ("CALL", "SAMPUTIL", "literal", 40), ("CALL", "SAMPSUB", "value", 41),
-            ("LINK", "SAMPLNK", "literal", 77), ("XCTL", None, "unresolved", 79)])
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM access").fetchone()[0], 11)
+            ("LINK", "SAMPLNK", "literal", 77), ("XCTL", None, "unresolved", 79),
+            ("SQL CALL", "CARDDEMO.POST_TRAN", "literal", 88), ("SQL CALL", "SAMPSUB", "value", 91)])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM access").fetchone()[0], 13)
+        self.assertEqual([tuple(c) for c in conn.execute("SELECT kind, line FROM commits ORDER BY line")],
+                         [("COMMIT", 96), ("SYNCPOINT ROLLBACK", 97)])
+        self.assertEqual([tuple(r) for r in conn.execute("SELECT name, program FROM procedures ORDER BY line")],
+                         [("CARDDEMO.POST_TRAN", "POSTTRN"), ("CARDDEMO.SAMPSUB", "SAMPSUB"),
+                          ("CARDDEMO.PURGE_AUDIT", None)])
         self.assertEqual(conn.execute("SELECT status FROM runs").fetchone()[0], "finished")
 
         second = self.parse()
         self.assertEqual(self.parsed, [])
         cached = conn.execute("SELECT cached FROM run_files WHERE run_id = ?", (second,)).fetchone()[0]
         self.assertEqual(cached, 1)
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0], 4)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0], 6)
 
     def test_changed_copybook_or_folder_order_reparses(self):
         self.parse()
@@ -98,6 +104,13 @@ class StoreTest(unittest.TestCase):
         self.assertIn("4 calls between programs: 2 name the program, 1 use a data item's VALUE, "
                       "1 are set at run time (1 with names the program MOVEs into them).", markdown)
         self.assertIn("- SAMPLE XCTL `WS-NEXT-PGM` at SAMPLE.cbl:79, maybe SAMPNXT", markdown)
+        self.assertIn("- 2 stored procedure calls (EXEC SQL CALL) to 2 procedures.", markdown)
+        self.assertIn("- **CARDDEMO.POST_TRAN**, called by SAMPLE (SAMPLE.cbl:88): COBOL, program POSTTRN, "
+                      "2 parameters, defined at ddl/PROCS.sql:2", markdown)
+        self.assertIn("- Defined but not called from COBOL: CARDDEMO.PURGE_AUDIT (ddl/PROCS.sql:14)", markdown)
+        self.assertIn("- SAMPLE PREPARE from `WS-CUST-NAME` at SAMPLE.cbl:93; SQL text: "
+                      "`DELETE FROM CARDDEMO.TEMP_TRAN`", markdown)
+        self.assertIn("- 2 commit and rollback points in 1 program: COMMIT 1, SYNCPOINT ROLLBACK 1.", markdown)
         self.assertIn("Copybooks found in folders: `cpy` (1)", markdown)
         self.assertIn("COPAUA0C still fails", page["notes"])
         self.assertIn("_Not ready.", backlog(self.store))

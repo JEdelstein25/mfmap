@@ -11,6 +11,7 @@ from .model import (
     Access,
     Call,
     CallEdge,
+    CommitPoint,
     Cics,
     DataItem,
     Dli,
@@ -29,6 +30,7 @@ from .model import (
     Sql,
     Statement,
     call_edges,
+    commit_points,
     data_access,
     literal,
     load,
@@ -37,8 +39,8 @@ from .run import find_sources
 from .store import load_project, parse
 
 __all__ = [
-    "Access", "Call", "CallEdge", "Cics", "DataItem", "Dli", "FileControl", "FileIo", "GoTo",
+    "Access", "Call", "CallEdge", "Cics", "CommitPoint", "DataItem", "Dli", "FileControl", "FileIo", "GoTo",
     "Location", "Node", "Paragraph", "Perform", "Program", "Project", "Reference",
-    "SCHEMA_VERSION", "SourceFile", "Sql", "Statement", "call_edges", "data_access",
+    "SCHEMA_VERSION", "SourceFile", "Sql", "Statement", "call_edges", "commit_points", "data_access",
     "find_sources", "literal", "load", "load_project", "parse",
 ]

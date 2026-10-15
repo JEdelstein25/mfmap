@@ -87,6 +87,31 @@ class TestExecResourceMetadata {
     assertTrue(new Gson().toJson(cursor).contains("\"cursorName\":\"C1\""));
   }
 
+  @Test
+  void storedProcedureCallsAndDynamicSql() {
+    ExecSqlNode call = sql("CALL PAYROLL.CALC_PAY(:EMP-ID, :PAY-AMT)");
+    assertEquals("CALL", call.getStatementType());
+    assertEquals("PAYROLL.CALC_PAY", call.getProcedureName());
+    assertEquals(":PROC-NAME", sql("CALL :PROC-NAME").getProcedureName());
+
+    ExecSqlNode prepare = sql("PREPARE S1 FROM :WS-STMT");
+    assertEquals("PREPARE", prepare.getStatementType());
+    assertEquals("S1", prepare.getStatementName());
+    assertEquals(":WS-STMT", prepare.getSqlSource());
+    assertEquals("S1", sql("EXECUTE S1 USING :WS-ID").getStatementName());
+    ExecSqlNode cursor = sql("DECLARE C2 CURSOR FOR S1");
+    assertEquals("DECLARE CURSOR", cursor.getStatementType());
+    assertEquals("S1", cursor.getStatementName());
+    assertNull(sql("DECLARE C3 CURSOR FOR SELECT ID FROM T1").getStatementName());
+
+    ExecSqlNode immediate = sql("EXECUTE IMMEDIATE :WS-STMT");
+    assertEquals("EXECUTE IMMEDIATE", immediate.getStatementType());
+    assertEquals(":WS-STMT", immediate.getSqlSource());
+    ExecSqlNode literal = sql("EXECUTE IMMEDIATE 'DELETE FROM OLD.AUDIT WHERE ID = 1'");
+    assertEquals("'DELETE FROM OLD.AUDIT WHERE ID = 1'", literal.getSqlSource());
+    assertTrue(new Gson().toJson(call).contains("\"procedureName\":\"PAYROLL.CALC_PAY\""));
+  }
+
   private ExecSqlNode sql(String source) {
     Db2SqlExecParser parser =
         new Db2SqlExecParser(

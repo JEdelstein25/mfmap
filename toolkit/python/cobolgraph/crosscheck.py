@@ -27,17 +27,20 @@ PATTERNS = {
     "PERFORM": r"(?<![\w-])PERFORM(?![\w-])",
     "EXEC CICS": r"\bEXEC\s+CICS\b",
     "EXEC SQL": r"\bEXEC\s+SQL\b(?!\s+INCLUDE\b)",
+    "SQL CALL": r"\bEXEC\s+SQL\s+CALL\b",
     "EXEC DLI": r"\bEXEC\s+DLI\b",
 }
 INCLUDE = re.compile(
     r"\bCOPY\s+['\"]?([\w#@$-]+)['\"]?|\bEXEC\s+SQL\s+INCLUDE\s+([\w#@$-]+)|^\s*INCLUDE\s+([\w#@$-]+)", re.I)
 STRING = re.compile(r"'[^']*'|\"[^\"]*\"")
+EXEC_SQL = re.compile(r"\bEXEC\s+SQL\b.*?\bEND-EXEC\b", re.I | re.S)
 
 
 def graph_counts(program: Program) -> collections.Counter:
     return collections.Counter({
         "CALL": len(program.calls), "PERFORM": len(program.performs),
         "EXEC CICS": len(program.cics), "EXEC SQL": len(program.sql), "EXEC DLI": len(program.dli),
+        "SQL CALL": sum(s.statement_type == "CALL" for s in program.sql),
     })
 
 
@@ -73,7 +76,10 @@ class TextScan:
 
     def counts(self, path: Path) -> collections.Counter:
         text = self.text(path)
-        return collections.Counter({k: len(re.findall(p, text, re.I)) for k, p in PATTERNS.items()})
+        counts = collections.Counter({k: len(re.findall(p, text, re.I)) for k, p in PATTERNS.items()})
+        # A stored procedure CALL inside EXEC SQL is not a COBOL CALL.
+        counts["CALL"] = len(re.findall(PATTERNS["CALL"], EXEC_SQL.sub(" ", text), re.I))
+        return counts
 
 
 def crosscheck(project: Project, scan: TextScan) -> tuple[collections.Counter, collections.Counter, dict]:

@@ -17,7 +17,7 @@ All changes are in the language server under `server/`. Each modified file lists
    - The command line client answers editor callbacks, such as `availableDialects`, with empty results instead of throwing. This fixes analysis of programs with `CALL` statements.
    - [server/CLI.md](server/CLI.md) documents the commands, including that relative copybook folders resolve from the current working directory.
 2. **CICS detail:** each `EXEC CICS` node records its command (for example `SEND MAP`) and its options as name and value pairs.
-3. **SQL detail:** each `EXEC SQL` node records its statement type, the tables and views it references, and its cursor name.
+3. **SQL detail:** each `EXEC SQL` node records its statement type, the tables and views it references, and its cursor name. A stored procedure `CALL` records the procedure name (or the host variable holding it); `PREPARE`, `EXECUTE` and `DECLARE CURSOR FOR` a prepared statement record the statement name; `PREPARE` and `EXECUTE IMMEDIATE` record where the SQL text comes from.
 4. **SYNC clause:** variable nodes record `SYNCHRONIZED` and its optional `LEFT` or `RIGHT` direction.
 5. **IMS DL/I:** `EXEC DLI` blocks become `ExecDliNode` statements with their command, options and host variable references, instead of "Unknown EXEC block" diagnostics.
 6. **CICS stand-in copybooks:** when the copybook folders have no `DFHAID` or `DFHBMSCA`, the parser uses stand-ins written for this fork (`server/engine/src/main/resources/implicitCopybooks/`). Their names follow IBM's public CICS documentation and their values are the EBCDIC bytes of the IBM 3270 data stream. They are not IBM's copybooks. A copybook with the same name in the copybook folders takes precedence.
@@ -35,7 +35,7 @@ All changes are in the language server under `server/`. Each modified file lists
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.1.3 https://github.com/JEdelstein25/parsebol tools/cobol-parser
+git clone --branch v0.1.4 https://github.com/JEdelstein25/parsebol tools/cobol-parser
 (cd tools/cobol-parser/server && mvn -B -q -Dmaven.test.skip -pl engine -am package)
 tools/cobol-parser/toolkit/cobolgraph parse app -cf app/cpy -ce cpy
 tools/cobol-parser/toolkit/cobolgraph serve

@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from . import procedures as sp
 from . import questions
 from .store import connect, latest_files
 
@@ -129,8 +130,11 @@ def parser_sections(conn, files, current, rel) -> list[str]:
     def count(sql, *args):
         return conn.execute(sql, args).fetchall()
 
-    calls = [c for c in count("SELECT * FROM calls") if c["file"] in current]
+    every_call = [c for c in count("SELECT * FROM calls") if c["file"] in current]
+    calls = [c for c in every_call if c["via"] != "SQL CALL"]
+    proc_calls = [c for c in every_call if c["via"] == "SQL CALL"]
     access = [a for a in count("SELECT * FROM access") if a["file"] in current]
+    commits = [c for c in count("SELECT * FROM commits") if c["file"] in current]
     out.append("\n## What the Parser Found\n")
     programs = [p for p in count("SELECT * FROM programs") if p["file"] in current]
     out.append(f"- {sum(p['paragraphs'] for p in programs):,} paragraphs, "
@@ -145,6 +149,24 @@ def parser_sections(conn, files, current, rel) -> list[str]:
     out.append(f"- {len(access)} reads and writes of stored data: " + ", ".join(
         f"{stores[s]} {s} ({plural(len({a['resource'] for a in access if a['store'] == s}), 'resource')})"
         for s in sorted(stores)) + ".")
+    out.append(f"- {len(proc_calls)} stored procedure calls (EXEC SQL CALL) to "
+               f"{plural(len({c['target'] or c['expression'] for c in proc_calls}), 'procedure')}.")
+    dynamic = [a for a in access if a["store"] == "db2" and a["mode"] == "unknown"]
+    out.append(f"- {len(dynamic)} dynamic SQL statements (PREPARE or EXECUTE IMMEDIATE) whose tables "
+               "are only known at run time.")
+    kinds = collections.Counter(c["kind"] for c in commits)
+    out.append(f"- {len(commits)} commit and rollback points in "
+               f"{plural(len({c['program'] for c in commits}), 'program')}"
+               + (": " + ", ".join(f"{k} {n}" for k, n in sorted(kinds.items())) if kinds else "") + ".")
+    out += procedure_section(conn, proc_calls, rel)
+    if dynamic:
+        out.append("\n### Dynamic SQL\n")
+        for a in dynamic[:12]:
+            text = json.loads(a["candidates"] or "[]")
+            out.append(f"- {a['program']} {a['verb']} from `{a['expression']}` at {rel(a['path'])}:{a['line']}"
+                       + (f"; SQL text: " + "; ".join(f"`{t[:80]}`" for t in text) if text else ""))
+        if len(dynamic) > 12:
+            out.append(f"- and {len(dynamic) - 12} more")
     unresolved = [c for c in calls if c["resolved"] == "unresolved"]
     if unresolved:
         out.append("\n### Calls Set at Run Time\n")
@@ -165,6 +187,41 @@ def parser_sections(conn, files, current, rel) -> list[str]:
                 f"{p} ({t} vs {g})" for p, (t, g) in diff.items())
             out.append(f"- {c['kind']}: text {c['text']:,}, graph {c['graph']:,}, {note}.")
     return out + [""]
+
+
+def procedure_section(conn, proc_calls, rel) -> list[str]:
+    """Each stored procedure the programs call, with its definition when the DDL has one."""
+    defined = [sp.Procedure(r["name"], r["language"], r["program"], tuple(json.loads(r["parameters"])),
+                            r["result_sets"], r["path"], r["line"], tuple(json.loads(r["reads"])),
+                            tuple(json.loads(r["writes"])), tuple(json.loads(r["calls"])))
+               for r in conn.execute("SELECT * FROM procedures")]
+    if not proc_calls and not defined:
+        return []
+    out = ["\n### Stored Procedures\n"]
+    by_name = collections.defaultdict(list)
+    for c in proc_calls:
+        by_name[c["target"] or f"`{c['expression']}` (set at run time)"].append(c)
+    used = set()
+    for name, cs in sorted(by_name.items()):
+        d = sp.match(name, defined) if cs[0]["target"] else None
+        callers = sorted({c["program"] for c in cs})
+        line = f"- **{name}**, called by {', '.join(callers)} ({rel(cs[0]['path'])}:{cs[0]['line']}"
+        line += f" and {len(cs) - 1} more)" if len(cs) > 1 else ")"
+        if d:
+            used.add(d)
+            kind = "native SQL" if d.native else f"{d.language or 'external'}, program {d.program or '?'}"
+            line += f": {kind}, {plural(len(d.parameters), 'parameter')}, defined at {rel(d.path)}:{d.line}"
+            if d.native and (d.reads or d.writes):
+                line += f"; body reads {', '.join(d.reads) or 'nothing'}, writes {', '.join(d.writes) or 'nothing'}"
+        else:
+            line += ": **no CREATE PROCEDURE found**"
+        out.append(line)
+    unused = [d for d in defined if d not in used]
+    if unused:
+        out.append(f"- Defined but not called from COBOL: " + ", ".join(f"{d.name} ({rel(d.path)}:{d.line})"
+                                                                      for d in unused[:12])
+                   + (f" and {len(unused) - 12} more" if len(unused) > 12 else ""))
+    return out
 
 
 def pick(obj, *keys):

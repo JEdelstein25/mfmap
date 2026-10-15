@@ -16,8 +16,9 @@ import os
 import sys
 
 from . import mq, questions
+from . import procedures as sp
 from .crosscheck import PATTERNS, TextScan, crosscheck
-from .model import Project, call_edges, data_access
+from .model import Project, call_edges, commit_points, data_access
 from .run import find_sources
 from .report import add_note, backlog, report, report_markdown
 from .serve import serve
@@ -30,9 +31,11 @@ def where(location, root: str) -> str:
     return f"{os.path.relpath(location.path, root)}:{location.line}"
 
 
-def facts(project: Project, root: str) -> dict:
-    """Programs, calls, data access and files as plain JSON, with file:line evidence."""
-    programs, calls, access, files = [], [], [], []
+def facts(project: Project, root: str, ddl=()) -> dict:
+    """Programs, calls, data access, files, commit points and stored procedures as plain JSON,
+    with file:line evidence. Stored procedures come from DDL files under ``root`` and ``ddl``."""
+    programs, calls, access, files, commits = [], [], [], [], []
+    defined = sp.procedures(sp.find_ddl(root, ddl))
     for p in project.programs.values():
         programs.append({
             "name": p.name,
@@ -43,18 +46,29 @@ def facts(project: Project, root: str) -> dict:
             "copybooks": sorted(set(p.copybooks)),
         })
         for e in call_edges(p):
-            calls.append({
+            call = {
                 "from": p.name, "to": e.target, "via": e.via, "resolved": e.resolved,
                 "expression": e.expression, "candidates": list(e.candidates),
                 "paragraph": e.statement.paragraph.name if e.statement.paragraph else None,
                 "evidence": where(e.statement.location, root),
-            })
+            }
+            if e.via == "SQL CALL":
+                d = sp.match(e.target, defined)
+                call["definition"] = f"{os.path.relpath(d.path, root)}:{d.line}" if d else None
+                call["program"] = d.program if d else None
+            calls.append(call)
         for a in data_access(p):
             access.append({
                 "program": p.name, "paragraph": a.paragraph.name if a.paragraph else None,
                 "store": a.store, "resource": a.resource, "mode": a.mode, "resolved": a.resolved,
                 "expression": a.expression, "statement": a.statement.verb,
                 "evidence": where(a.statement.location, root),
+                **({"candidates": list(a.candidates)} if a.candidates else {}),
+            })
+        for c in commit_points(p):
+            commits.append({
+                "program": p.name, "paragraph": c.statement.paragraph.name if c.statement.paragraph else None,
+                "kind": c.kind, "evidence": where(c.statement.location, root),
             })
         for f in p.files:
             files.append({
@@ -62,7 +76,17 @@ def facts(project: Project, root: str) -> dict:
                 "organization": f.organization, "access": f.access_mode,
                 "recordKey": f.record_key, "evidence": where(f.location, root),
             })
-    return {"programs": programs, "calls": calls, "access": access, "files": files}
+    called = {e["to"] for e in calls if e["via"] == "SQL CALL"}
+    procedures = [{
+        "name": d.name, "language": d.language, "program": d.program,
+        "programInRepository": d.program in project.programs if d.program else None,
+        "parameters": list(d.parameters), "resultSets": d.result_sets,
+        "calledFromCobol": any(sp.match(c, [d]) for c in called if c),
+        **({"reads": list(d.reads), "writes": list(d.writes), "calls": list(d.calls)} if d.native else {}),
+        "evidence": f"{os.path.relpath(d.path, root)}:{d.line}",
+    } for d in defined]
+    return {"programs": programs, "calls": calls, "access": access, "files": files,
+            "commits": commits, "procedures": procedures}
 
 
 def summary(project: Project) -> str:
@@ -77,6 +101,7 @@ def summary(project: Project) -> str:
         counts["PERFORM"] += len(p.performs)
         counts["EXEC CICS"] += len(p.cics)
         counts["EXEC SQL"] += len(p.sql)
+        counts["SQL CALL"] += sum(s.statement_type == "CALL" for s in p.sql)
         counts["EXEC DLI"] += len(p.dli)
         counts["file I/O"] += len(p.file_io)
     codes = collections.Counter(
@@ -110,6 +135,9 @@ def main(argv=None) -> int:
     p.add_argument("-ce", "--copybook-extension", action="append", default=[], help="copybook extension")
     p.add_argument("-j", "--jobs", type=int, default=4)
     p.add_argument("--force", action="store_true", help="parse unchanged files again")
+    p.add_argument("--ddl", action="append", default=[],
+                   help="DDL file or folder with CREATE PROCEDURE statements, in addition to the "
+                        ".sql, .ddl and .db2 files under the current folder")
 
     v = commands.add_parser("serve", help="serve the report page, refreshed as it changes")
     v.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
@@ -149,6 +177,7 @@ def main(argv=None) -> int:
     f = commands.add_parser("facts", help="programs, calls, data access and files as JSON")
     f.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
     f.add_argument("--root", default=".", help="make evidence paths relative to this folder")
+    f.add_argument("--ddl", action="append", default=[], help="DDL file or folder (see parse)")
 
     c = commands.add_parser("crosscheck", help="compare statement counts with a text scan")
     c.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
@@ -183,7 +212,7 @@ def main(argv=None) -> int:
             print(f"[{sum(statuses.values())}/{len(sources)}] {status:7} {os.path.relpath(path)}", flush=True)
 
         run = parse(args.store, args.jar, sources, args.copybooks, args.copybook_extension,
-                    args.jobs, args.force, progress)
+                    args.jobs, args.force, progress, args.ddl)
         print(f"run {run}: " + ", ".join(f"{n} {s}" for s, n in sorted(statuses.items()))
               + f"; store {args.store}")
         return 1 if statuses["crash"] else 0
@@ -227,7 +256,7 @@ def main(argv=None) -> int:
             print(f"{name}: " + ", ".join(f"{k} text {t} graph {g}" for k, (t, g) in diff.items()))
         return 0 if not differences else 1
     else:
-        json.dump(facts(project, args.root), sys.stdout, indent=1)
+        json.dump(facts(project, args.root, args.ddl), sys.stdout, indent=1)
         print()
     return 0
 

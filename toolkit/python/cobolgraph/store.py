@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 from .crosscheck import PATTERNS, TextScan, graph_counts
-from .model import Project, SourceFile, call_edges, data_access
+from . import procedures as sp
+from .model import Project, SourceFile, call_edges, commit_points, data_access
 from .run import GraphWorker, output_names, parse_one, parser_options
 
 SCHEMA = """
@@ -50,7 +51,12 @@ CREATE TABLE IF NOT EXISTS calls (
   expression TEXT, candidates TEXT, path TEXT, line INTEGER);
 CREATE TABLE IF NOT EXISTS access (
   file TEXT, program TEXT, paragraph TEXT, store TEXT, resource TEXT, mode TEXT,
-  resolved TEXT, expression TEXT, verb TEXT, path TEXT, line INTEGER);
+  resolved TEXT, expression TEXT, verb TEXT, path TEXT, line INTEGER, candidates TEXT);
+CREATE TABLE IF NOT EXISTS commits (
+  file TEXT, program TEXT, paragraph TEXT, kind TEXT, path TEXT, line INTEGER);
+CREATE TABLE IF NOT EXISTS procedures (
+  name TEXT, language TEXT, program TEXT, parameters TEXT, result_sets INTEGER,
+  reads TEXT, writes TEXT, calls TEXT, path TEXT, line INTEGER);
 CREATE TABLE IF NOT EXISTS file_controls (
   file TEXT, program TEXT, name TEXT, assign TEXT, organization TEXT, access_mode TEXT,
   record_key TEXT, path TEXT, line INTEGER);
@@ -61,8 +67,9 @@ CREATE INDEX IF NOT EXISTS programs_file ON programs (file);
 CREATE INDEX IF NOT EXISTS calls_file ON calls (file);
 CREATE INDEX IF NOT EXISTS access_file ON access (file);
 CREATE INDEX IF NOT EXISTS file_controls_file ON file_controls (file);
+CREATE INDEX IF NOT EXISTS commits_file ON commits (file);
 """
-PER_FILE_TABLES = ("diagnostics", "programs", "calls", "access", "file_controls")
+PER_FILE_TABLES = ("diagnostics", "programs", "calls", "access", "file_controls", "commits")
 
 
 def connect(store: str | os.PathLike) -> sqlite3.Connection:
@@ -74,6 +81,8 @@ def connect(store: str | os.PathLike) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     if "counts" not in {r["name"] for r in conn.execute("PRAGMA table_info(files)")}:
         conn.execute("ALTER TABLE files ADD COLUMN counts TEXT")  # stores made before 0.1.1
+    if "candidates" not in {r["name"] for r in conn.execute("PRAGMA table_info(access)")}:
+        conn.execute("ALTER TABLE access ADD COLUMN candidates TEXT")  # stores made before 0.1.4
     return conn
 
 
@@ -135,6 +144,11 @@ def rows(path: str, graph: SourceFile) -> dict[str, list[tuple]]:
             out["access"].append(
                 (path, p.name, a.paragraph.name if a.paragraph else None, a.store, a.resource,
                  a.mode, a.resolved, a.expression, a.statement.verb,
+                 loc.path if loc else None, loc.line if loc else None, json.dumps(list(a.candidates))))
+        for c in commit_points(p):
+            loc = c.statement.location
+            out["commits"].append(
+                (path, p.name, c.statement.paragraph.name if c.statement.paragraph else None, c.kind,
                  loc.path if loc else None, loc.line if loc else None))
         for f in p.files:
             loc = f.location
@@ -195,9 +209,11 @@ def parse(
     jobs: int = 4,
     force: bool = False,
     progress: Optional[Callable[[str, str], None]] = None,
+    ddl: Sequence[str | os.PathLike] = (),
 ) -> int:
     """Parse ``sources`` into the store and return the run id. Each file's results are committed
-    as soon as it finishes, so the report page can follow the run."""
+    as soon as it finishes, so the report page can follow the run. Stored procedure definitions
+    are read from DDL files under the current folder and from the ``ddl`` files or folders."""
     store = Path(store)
     conn = connect(store)
     options = parser_options(copybook_dirs, copybook_extensions)
@@ -300,6 +316,12 @@ def parse(
                 conn.execute("INSERT INTO checks VALUES (?, ?, ?, ?, ?)",
                              (run_id, kind, text[kind], graph[kind], json.dumps(diff)))
     with conn:
+        conn.execute("DELETE FROM procedures")
+        conn.executemany(
+            "INSERT INTO procedures VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(d.name, d.language, d.program, json.dumps(d.parameters), d.result_sets, json.dumps(d.reads),
+              json.dumps(d.writes), json.dumps(d.calls), d.path, d.line)
+             for d in sp.procedures(sp.find_ddl(os.getcwd(), ddl))])
         conn.execute("UPDATE runs SET finished = ?, status = 'finished' WHERE id = ?",
                      (time.time(), run_id))
     conn.close()
