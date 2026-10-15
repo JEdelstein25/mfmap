@@ -11,7 +11,7 @@ The file must follow ``schema/migration-v1.schema.json``. ``validate`` checks it
 schema with a small validator for the keywords the schema uses, so the toolkit needs nothing beyond
 Python. ``check`` also checks what a schema cannot: unit IDs are unique, every dependency is on a
 unit in an earlier wave, every program is in exactly one unit or excluded, and every endpoint is
-one the store knows.
+one the store knows. It warns when a unit has started before the units it depends on are built.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ PLAN = "migration.json"
 # A copy of schema/migration-v1.schema.json, so an installed package has it; a test keeps them equal.
 SCHEMA = Path(__file__).with_name("migration-v1.schema.json")
 ENDPOINT = re.compile(r"^[a-z][a-z0-9-]*:.+$")
+STATUSES = ["todo", "building", "built", "verified"]
 
 
 def schema() -> dict:
@@ -120,11 +121,12 @@ def check(path: Path, conn=None) -> Result:
         return Result(None, errors)
     result = Result(data)
     units = data["units"]
-    waves = {}
+    waves, statuses = {}, {}
     for i, u in enumerate(units):
         if u["id"] in waves:
             result.errors.append(f"units[{i}]: unit ID {u['id']} is used twice")
         waves[u["id"]] = u["wave"]
+        statuses[u["id"]] = u.get("status", "todo")
     for u in units:
         for d in u.get("dependencies", []):
             if d["unit"] == u["id"]:
@@ -134,6 +136,9 @@ def check(path: Path, conn=None) -> Result:
             elif waves[d["unit"]] >= u["wave"]:
                 result.errors.append(f"unit {u['id']} (wave {u['wave']}): depends on {d['unit']}, which is in "
                                      f"wave {waves[d['unit']]}; a dependency must be in an earlier wave")
+            elif statuses[u["id"]] != "todo" and STATUSES.index(statuses[d["unit"]]) < STATUSES.index("built"):
+                result.warnings.append(f"unit {u['id']} is {statuses[u['id']]}, but it depends on {d['unit']}, "
+                                       f"which is {statuses[d['unit']]}")
         for iface in u.get("interfaces", []):
             if iface.get("with") and iface["with"] not in waves:
                 result.errors.append(f"unit {u['id']}: interface {iface['name']} is with {iface['with']}, which is not a unit")

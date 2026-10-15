@@ -245,8 +245,15 @@ def endpoint(value: str) -> str:
     return f"`{name}` ({kind})" if name else f"`{value}`"
 
 
+STATUS_LABELS = {"todo": "to do", "building": "building", "built": "built", "verified": "verified"}
+
+
 def unit_section(u: dict, notes: Path, rel) -> list[str]:
     out = [f"### {u['id']} {u['name']}\n"]
+    out.append(f"- **Status:** {STATUS_LABELS[u.get('status', 'todo')]}")
+    if u.get("threads"):
+        out.append("- **Threads:** " + ", ".join(
+            f"[{t['task']}]({t['url']})" + (" (finished)" if t.get("finished") else "") for t in u["threads"]))
     out.append("- **Programs:** " + ", ".join(endpoint(p) for p in u["programs"]))
     for label, key in (("Entry points", "entryPoints"), ("Reads", "reads"), ("Writes", "writes")):
         if u.get(key):
@@ -292,6 +299,14 @@ def backlog(store: str | os.PathLike, explicit: Optional[str] = None) -> str:
     units = result.plan["units"]
     target = f" for {result.plan['target']}" if result.plan.get("target") else ""
     out.append(f"{plural(len(units), 'unit')}{target} from `{rel(str(path))}`, in build order.\n")
+    counts = collections.Counter(u.get("status", "todo") for u in units)
+    out.append("Progress: " + ", ".join(f"{counts[s]} {STATUS_LABELS[s]}" for s in reversed(plan.STATUSES)) + ".\n")
+    active = [(u, t) for u in units for t in u.get("threads", []) if not t.get("finished")]
+    if active:
+        out.append("## Active Threads\n")
+        out += [f"- [{u['id']} {t['task']}]({t['url']}): {u['name']}, {STATUS_LABELS[u.get('status', 'todo')]}"
+                for u, t in active]
+        out.append("")
     for wave in sorted({u["wave"] for u in units}):
         out.append(f"## Wave {wave}\n")
         for u in units:

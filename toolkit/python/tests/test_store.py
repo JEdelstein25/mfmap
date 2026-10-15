@@ -116,10 +116,12 @@ class StoreTest(unittest.TestCase):
         self.assertIn("_Not ready.", backlog(self.store))
 
         (self.src / "migration.json").write_text(json.dumps({"version": 1, "units": [
-            {"id": "U2", "name": "Later", "wave": 2, "programs": ["program:SAMPLE"],
+            {"id": "U2", "name": "Later", "wave": 2, "programs": ["program:SAMPLE"], "status": "building",
+             "threads": [{"url": "https://ampcode.com/threads/T-2", "task": "build"}],
              "writes": ["db2:BANK.AUDIT_LOG"],
              "dependencies": [{"unit": "U1", "on": "vsam:ACCTFIL", "handling": "Calls U1's account service"}]},
-            {"id": "U1", "name": "First", "wave": 1, "programs": ["program:SAMPLE2"],
+            {"id": "U1", "name": "First", "wave": 1, "programs": ["program:SAMPLE2"], "status": "built",
+             "threads": [{"url": "https://ampcode.com/threads/T-1", "task": "build", "finished": True}],
              "interfaces": [{"direction": "provides", "name": "account record", "layout": "copybook:SAMPREC",
                              "with": "U2"}],
              "acceptanceChecks": [{"description": "Balances match the batch report for every account"}]}]}))
@@ -128,6 +130,12 @@ class StoreTest(unittest.TestCase):
         full = backlog(self.store)
         self.assertLess(full.index("### U1 First"), full.index("### U2 Later"))
         self.assertIn("- **Programs:** `SAMPLE` (program)", full)
+        self.assertIn("Progress: 0 verified, 1 built, 1 building, 0 to do.", full)
+        # Only threads that haven't reported back are active; every unit links all of its threads.
+        active = full[full.index("## Active Threads"):full.index("## Wave 1")]
+        self.assertEqual(active.strip().splitlines()[1:],
+                         ["", "- [U2 build](https://ampcode.com/threads/T-2): Later, building"])
+        self.assertIn("- **Status:** built\n- **Threads:** [build](https://ampcode.com/threads/T-1) (finished)", full)
         self.assertIn("- **Depends on:**\n  - U1 for `ACCTFIL` (vsam): Calls U1's account service", full)
         self.assertIn("- **Interfaces:**\n  - Provides account record with U2: `SAMPREC` (copybook)", full)
         self.assertIn("- **Acceptance checks:**\n  - Balances match the batch report for every account", full)
@@ -218,6 +226,15 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(problems({"version": 1, "units": [{**unit, "reads": ["db2:BANK.CUSTOMER"]}]}), [])
         resolvers.record(self.store, "exposes", "api:/accounts", "program:SAMPLE")
         self.assertEqual(problems({"version": 1, "units": [{**unit, "entryPoints": ["api:/accounts"]}]}), [])
+        self.assertIn('units[0].status: must be one of "todo", "building", "built", "verified"',
+                      problems({"version": 1, "units": [{**unit, "status": "done"}]}))
+        # Starting a unit before what it depends on is built is a warning, not an error.
+        later = {"id": "U2", "name": "Reports", "wave": 2, "programs": ["program:SAMPUTIL"], "status": "building",
+                 "dependencies": [{"unit": "U1", "on": "program:SAMPLE", "handling": "Reads its output"}]}
+        path.write_text(json.dumps({"version": 1, "units": [{**unit, "status": "building"}, later]}))
+        self.assertIn("unit U2 is building, but it depends on U1, which is building", plan.check(path).warnings)
+        path.write_text(json.dumps({"version": 1, "units": [{**unit, "status": "built"}, later]}))
+        self.assertFalse(any("depends on" in w for w in plan.check(path).warnings))
 
     def test_schema_copy_matches(self):
         shipped = Path(plan.__file__).with_name("migration-v1.schema.json").read_text()

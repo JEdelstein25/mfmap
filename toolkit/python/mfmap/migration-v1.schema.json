@@ -125,6 +125,24 @@
             }
           }
         },
+        "status": {
+          "enum": ["todo", "building", "built", "verified"],
+          "description": "How far the rewrite has got. todo: not started (the default). building: a thread is implementing it. built: merged, and its acceptance checks pass. verified: its business rules were checked against the cited source and its outputs compared with the current system."
+        },
+        "threads": {
+          "type": "array",
+          "description": "Threads that work on the unit, so the Backlog tab can link to them.",
+          "items": {
+            "type": "object",
+            "required": ["url", "task"],
+            "additionalProperties": false,
+            "properties": {
+              "url": { "type": "string", "pattern": "^https?://" },
+              "task": { "type": "string", "minLength": 1, "description": "What the thread does, such as build or review." },
+              "finished": { "type": "boolean", "description": "True once the thread has reported back." }
+            }
+          }
+        },
         "acceptanceChecks": {
           "type": "array",
           "items": {

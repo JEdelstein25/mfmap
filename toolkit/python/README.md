@@ -69,8 +69,9 @@ The page refreshes while a parse runs or the notes change. It has three tabs:
   copybooks the parser supplied or could not find, parse errors grouped by message, what the parser
   found (paragraphs, statements, data items, calls by how their targets were resolved, data access
   by kind of store, calls set at run time) and the count check against the text scan.
-- **Backlog** lists every unit in `migration.json` in wave order, followed by its
-  `units/<unit ID>.md` file, and any problems `mfmap check` finds. The file is looked for in the
+- **Backlog** lists every unit in `migration.json` in wave order with its status, its threads
+  and its `units/<unit ID>.md` file, and any problems `mfmap check` finds. Above the waves are the
+  progress counts and the threads still working on a unit. The file is looked for in the
   parse root and next to the store; `--plan` names another.
 
 Any `file.cbl:line` reference opens the source around that line. The server binds to 127.0.0.1;
@@ -196,7 +197,9 @@ includes all entities and relationships, and the Parser tab counts them.
     "writes": ["db2:BANK.ACCOUNT"],
     "dependencies": [{"unit": "customers", "on": "program:CUSTINQ", "handling": "Call the customer service"}],
     "interfaces": [{"direction": "provides", "name": "account record", "layout": "copybook:ACCTREC"}],
-    "acceptanceChecks": [{"description": "Balances match the current system for every sample account"}]
+    "acceptanceChecks": [{"description": "Balances match the current system for every sample account"}],
+    "status": "building",
+    "threads": [{"url": "https://ampcode.com/threads/T-...", "task": "build"}]
   }],
   "excluded": [{"program": "program:OLDRPT", "reason": "No job or transaction runs it"}]
 }
@@ -207,6 +210,13 @@ else about a unit goes in `units/<unit ID>.md`. `mfmap check` validates the file
 and checks what a schema cannot: unit IDs are unique, a unit depends only on units in earlier
 waves, every parsed program is in exactly one unit or excluded with a reason, and every endpoint is
 in the map. It exits with status 1 when there are problems, and the Backlog tab lists them.
+
+While the units are built, `status` records how far each has got: `todo` (the default),
+`building`, `built` (merged, and its acceptance checks pass) or `verified` (its rules checked
+against the cited source and its outputs compared with the current system). `threads` links the
+threads working on a unit; set `finished` once a thread reports back, and it leaves the Backlog
+tab's Active Threads list. `mfmap check` warns when a unit has started before the units it depends
+on are built.
 
 ### Dynamic SQL and commit points
 

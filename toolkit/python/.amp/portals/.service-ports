@@ -1,0 +1,5 @@
+{
+  "servicePorts": {
+    "mfmap-preview": 30076
+  }
+}
