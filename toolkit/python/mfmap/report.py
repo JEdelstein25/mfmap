@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: EPL-2.0
 """The pages ``mfmap serve`` shows, as Markdown: Notes (open questions for a person and the
 agent's notes), Parser (what the parser read and found) and Backlog (every unit in
-``migration-spec.json``). ``mfmap report`` prints the first two."""
+``migration.json``). ``mfmap report`` prints the first two."""
 
 from __future__ import annotations
 
@@ -40,7 +40,9 @@ def plural(n: int, noun: str) -> str:
 
 
 def spec_path(store: Path, root: str, spec: Optional[str]) -> Optional[Path]:
-    for candidate in [spec, Path(root) / "migration-spec.json", store.parent / "migration-spec.json"]:
+    # migration-spec.json is the name before 0.3.2.
+    for candidate in [spec, *(base / name for base in (Path(root), store.parent)
+                              for name in ("migration.json", "migration-spec.json"))]:
         if candidate and Path(candidate).is_file():
             return Path(candidate)
     return None
@@ -247,7 +249,7 @@ def procedure_section(conn, proc_calls, rel) -> list[str]:
 
 def pick(obj, *keys):
     """The value of the first key in ``obj`` that matches one of ``keys`` ignoring case, ``_`` and
-    ``-``, since the agent chooses the exact field names in migration-spec.json."""
+    ``-``, since the agent chooses the exact field names in migration.json."""
     if isinstance(obj, dict):
         for key, value in obj.items():
             if key.lower().replace("_", "").replace("-", "") in keys:
@@ -264,7 +266,7 @@ def name(value) -> str:
 def load_spec(path: Optional[Path], rel) -> tuple[Optional[dict], Optional[str]]:
     """The spec, or a Markdown line saying why there is no backlog yet."""
     if not path:
-        return None, "_Not ready. It appears here once `migration-spec.json` has units._\n"
+        return None, "_Not ready. It appears here once `migration.json` has units._\n"
     try:
         spec = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
@@ -323,7 +325,7 @@ def field(key: str, value, indent: str = "") -> list[str]:
 
 
 def backlog(store: str | os.PathLike, spec: Optional[str] = None) -> str:
-    """Every unit in migration-spec.json with all of its fields and its units/<ID>.md file."""
+    """Every unit in migration.json with all of its fields and its units/<ID>.md file."""
     store = Path(store).resolve()
     conn = connect(store)
     try:

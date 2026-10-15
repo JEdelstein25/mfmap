@@ -162,14 +162,14 @@ def main(argv=None) -> int:
     v.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
     v.add_argument("--host", default="127.0.0.1")
     v.add_argument("--port", type=int, default=8765)
-    v.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
+    v.add_argument("--plan", "--spec", dest="spec", help="migration.json (default: next to the store or in the parse root)")
 
     r = commands.add_parser("report", help="print the Notes and Parser tabs as Markdown")
     r.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
 
     b = commands.add_parser("backlog", help="print every backlog unit in full as Markdown")
     b.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
-    b.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
+    b.add_argument("--plan", "--spec", dest="spec", help="migration.json (default: next to the store or in the parse root)")
 
     n = commands.add_parser("note", help="add a timestamped note to the report")
     n.add_argument("text", help="Markdown; file:line references link to the source")

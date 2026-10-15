@@ -69,7 +69,7 @@ The page refreshes while a parse runs or the notes change. It has three tabs:
   copybooks the parser supplied or could not find, parse errors grouped by message, what the parser
   found (paragraphs, statements, data items, calls by how their targets were resolved, data access
   by kind of store, calls set at run time) and the count check against the text scan.
-- **Backlog** lists every unit in wave order with all of its fields from `migration-spec.json`
+- **Backlog** lists every unit in wave order with all of its fields from `migration.json`
   (short lists on one line, longer ones and objects as nested bullets, empty fields left out)
   followed by its `units/<unit ID>.md` file. The file is looked for in the parse root and next to
   the store; `--spec` names another.

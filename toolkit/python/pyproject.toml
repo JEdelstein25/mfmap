@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mfmap"
-version = "0.3.1"
+version = "0.3.2"
 description = "Typed COBOL program model over mfmap's `analysis --graph` output"
 readme = "README.md"
 license = { text = "EPL-2.0" }

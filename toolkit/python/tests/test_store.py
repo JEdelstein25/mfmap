@@ -115,17 +115,17 @@ class StoreTest(unittest.TestCase):
         self.assertIn("COPAUA0C still fails", page["notes"])
         self.assertIn("_Not ready.", backlog(self.store))
 
-        (self.src / "migration-spec.json").write_text(json.dumps({"units": [
+        (self.src / "migration.json").write_text(json.dumps({"units": [
             {"id": "U2", "name": "Later", "wave": 2, "dependsOn": ["U1"]},
             {"id": "U1", "name": "First", "wave": 1, "programs": ["SAMPLE"]}]}))
-        spec = json.loads((self.src / "migration-spec.json").read_text())
+        spec = json.loads((self.src / "migration.json").read_text())
         spec["units"][1]["interfaces"] = [{"name": "ACCT-REC", "layout": "CVACT01Y"}]
         spec["units"][1]["acceptanceChecks"] = ["Balances match the batch report for every account"]
         spec["units"][1]["writes"] = []
-        (self.src / "migration-spec.json").write_text(json.dumps(spec))
+        (self.src / "migration.json").write_text(json.dumps(spec))
         (self.src / "units").mkdir()
         (self.src / "units" / "U1.md").write_text("# Business Rules\n\n- Rejects a zero amount at SAMPLE.cbl:40.\n")
-        full = backlog(self.store, str(self.src / "migration-spec.json"))
+        full = backlog(self.store, str(self.src / "migration.json"))
         self.assertLess(full.index("### U1 First"), full.index("### U2 Later"))
         self.assertIn("- **Programs:** SAMPLE", full)
         self.assertIn("- **Interfaces:**\n  - Name: ACCT-REC; Layout: CVACT01Y", full)

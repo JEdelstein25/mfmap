@@ -23,7 +23,7 @@ It targets IBM Enterprise COBOL with Db2, CICS and IMS. It is a starting point t
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.3.1 https://github.com/JEdelstein25/mfmap tools/mfmap
+git clone --branch v0.3.2 https://github.com/JEdelstein25/mfmap tools/mfmap
 tools/mfmap/mfmap parse app -cf app/cpy -ce cpy
 tools/mfmap/mfmap serve
 ```
@@ -35,7 +35,7 @@ Add `tools/mfmap`, `.mfmap/*`, `!.mfmap/notes.md` and `!.mfmap/questions.json` t
 ## What It Does
 
 - `mfmap parse` runs the parser over the programs and records the results in `.mfmap/`. It re-parses only programs whose source, copybooks or parser changed.
-- `mfmap serve` shows a page that updates while it works: **Notes** (open questions for people to answer, and notes on what was done), **Parser** (what was parsed, errors, and what was found) and **Backlog** (migration units from `migration-spec.json`).
+- `mfmap serve` shows a page that updates while it works: **Notes** (open questions for people to answer, and notes on what was done), **Parser** (what was parsed, errors, and what was found) and **Backlog** (migration units from `migration.json`).
 - Resolvers then connect what the parser found to the rest of the repository: CICS transactions to the programs they start, programs to the screens they send, jobs to the programs they run and the datasets they use, and paragraphs to the paragraphs they perform. Everything goes into `.mfmap/map.db`. `mfmap record` adds what needs judgment, such as which paragraphs hold business logic.
 - `mfmap facts` prints programs, calls, data access, files, commit points, stored procedures, entities and relationships as JSON.
 - `mfmap crosscheck` compares statement counts with a text search that does not use the parser.
