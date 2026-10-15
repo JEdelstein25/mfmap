@@ -161,6 +161,7 @@ class StoreTest(unittest.TestCase):
             ("performs", "paragraph:SAMPLE.0000-MAIN", "paragraph:SAMPLE.1000-READ"),
             ("calls", "program:SAMPLE", "program:SAMPUTIL"),
             ("transfers", "program:SAMPLE", None),
+            ("includes", "program:SAMPLE", "copybook:SAMPREC"),
         ]:
             self.assertIn(expected, rows)
         self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)

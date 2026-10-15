@@ -5,8 +5,9 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""What the parsed programs say about themselves: calls between programs, data access, PERFORM and
-GO TO between paragraphs, CICS screens sent and received, and transactions started or returned to."""
+"""What the parsed programs say about themselves: copybooks included, calls between programs, data
+access, PERFORM and GO TO between paragraphs, CICS screens sent and received, and transactions
+started or returned to."""
 
 from __future__ import annotations
 
@@ -24,6 +25,10 @@ def resolve(ctx: Context) -> Iterator[Fact]:
     current = {row["path"] for row in ctx.conn.execute(
         "SELECT f.path FROM files f JOIN run_files r ON r.path = f.path "
         "WHERE r.run_id = (SELECT MAX(id) FROM runs)")}
+    for row in ctx.conn.execute("SELECT * FROM programs"):
+        if row["file"] in current:
+            for copybook in json.loads(row["copybooks"] or "[]"):
+                yield Relationship("includes", f"program:{row['name']}", f"copybook:{copybook}", path=row["file"])
     for c in ctx.conn.execute("SELECT * FROM calls"):
         if c["file"] not in current:
             continue

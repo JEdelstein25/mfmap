@@ -156,7 +156,7 @@ Endpoints are written `type:name`, such as `program:COACTUPC`, `transaction:CAUP
 `screen:COSGN00.COSGN0A`, `job:POSTTRAN`, `dataset:AWS.ACCTDATA` or
 `paragraph:COACTUPC.2000-PROCESS`.
 
-- `programs`: calls between programs, data access, PERFORM and GO TO between paragraphs, CICS
+- `programs`: copybooks each program includes, calls between programs, data access, PERFORM and GO TO between paragraphs, CICS
   screens sent and received, and transactions started or returned to.
 - `cics`: transactions and the programs they start, from CSD `DEFINE` statements, and screens from
   BMS map source.

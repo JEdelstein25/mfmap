@@ -23,7 +23,7 @@ It targets IBM Enterprise COBOL with Db2, CICS and IMS. It is a starting point t
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.3.0 https://github.com/JEdelstein25/mfmap tools/mfmap
+git clone --branch v0.3.1 https://github.com/JEdelstein25/mfmap tools/mfmap
 tools/mfmap/mfmap parse app -cf app/cpy -ce cpy
 tools/mfmap/mfmap serve
 ```
