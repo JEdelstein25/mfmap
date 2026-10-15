@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mfmap import questions, store
+from mfmap import questions, resolvers, store
 from mfmap.report import add_note, backlog, report, report_markdown
 from mfmap.serve import source
 
@@ -140,6 +140,37 @@ class StoreTest(unittest.TestCase):
                          "CALL 'SAMPUTIL' USING WS-AMOUNT")
         self.assertIsNotNone(source(self.store, str(self.src / "cpy" / "SAMPREC.cpy"), 1))
         self.assertIsNone(source(self.store, str(self.jar), 1))
+
+    def test_resolvers_connect_transactions_screens_jobs_and_datasets(self):
+        self.parse()  # runs every resolver at the end
+        resolvers.record(self.store, "business-logic", "paragraph:SAMPLE.1000-READ",
+                         note="Copies each account to the report", evidence=f"{self.src}/SAMPLE.cbl:46")
+        resolvers.run(self.store)  # running again keeps what the agent recorded
+        conn = self.db()
+        rows = {(r["kind"], r["source"], r["target"]) for r in conn.execute("SELECT * FROM relationships")}
+        for expected in [
+            ("starts", "transaction:SAMP", "program:SAMPLE"),
+            ("sends", "program:SAMPLE", "screen:SAMPSET.SAMPMAP"),
+            ("returns-to", "program:SAMPLE", "transaction:SAMP"),
+            # The program runs through TSO batch; its SYSTSIN comes after the DDs it uses.
+            ("runs", "job:SAMPJOB", "program:SAMPLE"),
+            ("runs", "job:SAMPJOB", "proc:SAMPPROC"),
+            # SELECT ... ASSIGN names matched to the DD statements of the step that runs the program.
+            ("read", "program:SAMPLE", "dataset:PROD.SAMPLE.ACCOUNTS"),
+            ("write", "program:SAMPLE", "dataset:PROD.SAMPLE.REPORT(+1)"),
+            ("performs", "paragraph:SAMPLE.0000-MAIN", "paragraph:SAMPLE.1000-READ"),
+            ("calls", "program:SAMPLE", "program:SAMPUTIL"),
+            ("transfers", "program:SAMPLE", None),
+        ]:
+            self.assertIn(expected, rows)
+        self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)
+        entities = {(e["entity"], e["kind"], e["note"]) for e in conn.execute("SELECT * FROM entities")}
+        self.assertIn(("transaction:SAMP", "defined", "SAMPLE ACCOUNT INQUIRY"), entities)
+        self.assertIn(("screen:SAMPSET.SAMPMAP", "defined", None), entities)
+        self.assertIn(("job:SAMPJOB", "defined", None), entities)
+        self.assertIn(("paragraph:SAMPLE.1000-READ", "business-logic", "Copies each account to the report"),
+                      entities)
+        self.assertIn("## Relationships", report(self.store)["parser"])
 
     def test_questions_open_first_and_answers_reopen(self):
         self.parse()

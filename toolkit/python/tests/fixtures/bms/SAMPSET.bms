@@ -1,0 +1,6 @@
+SAMPSET  DFHMSD TYPE=&SYSPARM,MODE=INOUT,LANG=COBOL,STORAGE=AUTO,      *
+               TIOAPFX=YES
+SAMPMAP  DFHMDI SIZE=(24,80),                                          *
+               LINE=1,COLUMN=1
+         DFHMSD TYPE=FINAL
+         END

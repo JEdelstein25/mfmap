@@ -177,6 +177,8 @@ def parser_sections(conn, files, current, rel) -> list[str]:
         if len(unresolved) > 12:
             out.append(f"- and {len(unresolved) - 12} more")
 
+    out += relationship_section(conn)
+
     checks = count("SELECT * FROM checks WHERE run_id = (SELECT MAX(run_id) FROM checks)")
     if checks:
         out.append("\n## Count Check\n")
@@ -187,6 +189,25 @@ def parser_sections(conn, files, current, rel) -> list[str]:
                 f"{p} ({t} vs {g})" for p, (t, g) in diff.items())
             out.append(f"- {c['kind']}: text {c['text']:,}, graph {c['graph']:,}, {note}.")
     return out + [""]
+
+
+def relationship_section(conn) -> list[str]:
+    """What the resolvers and the agent recorded, counted by kind."""
+    entities = conn.execute("SELECT entity, kind, resolver FROM entities").fetchall()
+    rows = conn.execute("SELECT kind, target, resolver FROM relationships").fetchall()
+    if not entities and not rows:
+        return []
+    out = ["\n## Relationships\n"]
+    types = collections.Counter(e["entity"].split(":", 1)[0] for e in entities)
+    if types:
+        out.append(f"- {len(entities):,} entities: " + ", ".join(f"{n:,} {t}" for t, n in types.most_common()) + ".")
+    kinds = collections.Counter(r["kind"] for r in rows)
+    open_ = sum(1 for r in rows if not r["target"])
+    out.append(f"- {len(rows):,} relationships: " + ", ".join(f"{k} {n:,}" for k, n in kinds.most_common())
+               + f". {open_:,} have a target known only at run time.")
+    by = collections.Counter(r["resolver"] for r in rows) + collections.Counter(e["resolver"] for e in entities)
+    out.append("- Recorded by: " + ", ".join(f"{name} {n:,}" for name, n in sorted(by.items())) + ".")
+    return out
 
 
 def procedure_section(conn, proc_calls, rel) -> list[str]:

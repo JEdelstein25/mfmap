@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mfmap"
-version = "0.2.0"
+version = "0.3.0"
 description = "Typed COBOL program model over mfmap's `analysis --graph` output"
 readme = "README.md"
 license = { text = "EPL-2.0" }
@@ -18,7 +18,7 @@ test = ["jsonschema>=4"]
 mfmap = "mfmap.__main__:main"
 
 [tool.setuptools]
-packages = ["mfmap"]
+packages = ["mfmap", "mfmap.resolvers"]
 
 [tool.setuptools.package-data]
 mfmap = ["page.html"]

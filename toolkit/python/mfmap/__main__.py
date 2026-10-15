@@ -14,8 +14,9 @@ import collections
 import json
 import os
 import sys
+from pathlib import Path
 
-from . import mq, questions
+from . import mq, questions, resolvers
 from . import procedures as sp
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, commit_points, data_access
@@ -87,6 +88,24 @@ def facts(project: Project, root: str, ddl=()) -> dict:
     } for d in defined]
     return {"programs": programs, "calls": calls, "access": access, "files": files,
             "commits": commits, "procedures": procedures}
+
+
+def graph(store: str, root: str) -> dict:
+    """The resolvers' and the agent's entities and relationships from the store."""
+    from .store import connect
+    conn = connect(store)
+    try:
+        def evidence(r):
+            return f"{os.path.relpath(r['path'], root)}:{r['line']}" if r["path"] else None
+        entities = [{"entity": r["entity"], "kind": r["kind"], "note": r["note"], "resolver": r["resolver"],
+                     "evidence": evidence(r)} for r in conn.execute("SELECT * FROM entities ORDER BY entity")]
+        relationships = [{"kind": r["kind"], "from": r["source"], "to": r["target"], "resolved": r["resolved"],
+                          "expression": r["expression"], "note": r["note"], "resolver": r["resolver"],
+                          "evidence": evidence(r)}
+                         for r in conn.execute("SELECT * FROM relationships ORDER BY source, kind, target")]
+    finally:
+        conn.close()
+    return {"entities": entities, "relationships": relationships}
 
 
 def summary(project: Project) -> str:
@@ -171,6 +190,18 @@ def main(argv=None) -> int:
     a.add_argument("text", help="the answer; an empty answer reopens the question")
     a.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
 
+    rv = commands.add_parser("resolve", help="run the resolvers again (parse runs them too)")
+    rv.add_argument("names", nargs="*", help="resolvers to run; default all")
+    rv.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+
+    rc = commands.add_parser("record", help="record an entity or relationship you found yourself")
+    rc.add_argument("kind", help="what it is, such as business-logic, exposes or reads")
+    rc.add_argument("source", help="type:name, such as paragraph:COACTUPC.2000-PROCESS")
+    rc.add_argument("target", nargs="?", help="type:name; leave out to record a fact about the source")
+    rc.add_argument("--note", help="a one-line summary")
+    rc.add_argument("--evidence", help="file:line")
+    rc.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+
     s = commands.add_parser("summary", help="parse rate, counts and common errors")
     s.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
 
@@ -222,6 +253,18 @@ def main(argv=None) -> int:
     if args.command == "report":
         print(report_markdown(report(args.store)))
         return 0
+    if args.command == "resolve":
+        try:
+            counts = resolvers.run(args.store, args.names or None)
+        except KeyError as e:
+            parser.error(str(e.args[0]))
+        for name, (entities, relationships) in counts.items():
+            print(f"{name}: {entities} entities, {relationships} relationships")
+        return 0
+    if args.command == "record":
+        resolvers.record(args.store, args.kind, args.source, args.target, args.note, args.evidence)
+        print("recorded")
+        return 0
     if args.command == "question":
         entry = questions.ask(args.store, args.text, args.found, args.default, args.affects)
         print(f"added {entry['id']}")
@@ -256,7 +299,10 @@ def main(argv=None) -> int:
             print(f"{name}: " + ", ".join(f"{k} text {t} graph {g}" for k, (t, g) in diff.items()))
         return 0 if not differences else 1
     else:
-        json.dump(facts(project, args.root, args.ddl), sys.stdout, indent=1)
+        out = facts(project, args.root, args.ddl)
+        if (Path(args.graphs) / "map.db").is_file():
+            out.update(graph(args.graphs, args.root))
+        json.dump(out, sys.stdout, indent=1)
         print()
     return 0
 

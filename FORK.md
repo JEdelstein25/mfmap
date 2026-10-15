@@ -28,7 +28,7 @@ All changes are in the language server under `server/`. Each modified file lists
 
 ## Toolkit
 
-[toolkit/python](toolkit/python) is `mfmap`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.mfmap/map.db`, SQLite) that re-parses only changed programs, and `mfmap serve` shows a page, refreshed while a parse runs, with three tabs: Notes (open questions for people to answer, and the agent's notes), Parser (how the map was built) and Backlog. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository.
+[toolkit/python](toolkit/python) is `mfmap`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.mfmap/map.db`, SQLite) that re-parses only changed programs, runs resolvers that add entities and relationships from CICS definitions, BMS maps and JCL, and `mfmap serve` shows a page, refreshed while a parse runs, with three tabs: Notes (open questions for people to answer, and the agent's notes), Parser (how the map was built) and Backlog. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository.
 
 ## Set Up
 

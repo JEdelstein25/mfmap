@@ -28,6 +28,7 @@ from typing import Callable, Optional, Sequence
 from .crosscheck import PATTERNS, TextScan, graph_counts
 from . import procedures as sp
 from .model import Project, SourceFile, call_edges, commit_points, data_access
+from .resolvers import run as run_resolvers
 from .run import GraphWorker, output_names, parse_one, parser_options
 
 SCHEMA = """
@@ -54,6 +55,13 @@ CREATE TABLE IF NOT EXISTS access (
   resolved TEXT, expression TEXT, verb TEXT, path TEXT, line INTEGER, candidates TEXT);
 CREATE TABLE IF NOT EXISTS commits (
   file TEXT, program TEXT, paragraph TEXT, kind TEXT, path TEXT, line INTEGER);
+CREATE TABLE IF NOT EXISTS entities (
+  resolver TEXT, entity TEXT, kind TEXT, note TEXT, path TEXT, line INTEGER);
+CREATE TABLE IF NOT EXISTS relationships (
+  resolver TEXT, kind TEXT, source TEXT, target TEXT, resolved TEXT, expression TEXT, note TEXT,
+  path TEXT, line INTEGER);
+CREATE INDEX IF NOT EXISTS relationships_source ON relationships (source);
+CREATE INDEX IF NOT EXISTS relationships_target ON relationships (target);
 CREATE TABLE IF NOT EXISTS procedures (
   name TEXT, language TEXT, program TEXT, parameters TEXT, result_sets INTEGER,
   reads TEXT, writes TEXT, calls TEXT, path TEXT, line INTEGER);
@@ -213,7 +221,8 @@ def parse(
 ) -> int:
     """Parse ``sources`` into the store and return the run id. Each file's results are committed
     as soon as it finishes, so the report page can follow the run. Stored procedure definitions
-    are read from DDL files under the current folder and from the ``ddl`` files or folders."""
+    are read from DDL files under the current folder and from the ``ddl`` files or folders. Then
+    every resolver runs (see ``mfmap.resolvers``)."""
     store = Path(store)
     conn = connect(store)
     options = parser_options(copybook_dirs, copybook_extensions)
@@ -322,6 +331,10 @@ def parse(
             [(d.name, d.language, d.program, json.dumps(d.parameters), d.result_sets, json.dumps(d.reads),
               json.dumps(d.writes), json.dumps(d.calls), d.path, d.line)
              for d in sp.procedures(sp.find_ddl(os.getcwd(), ddl))])
+    conn.close()
+    run_resolvers(store)
+    conn = connect(store)
+    with conn:
         conn.execute("UPDATE runs SET finished = ?, status = 'finished' WHERE id = ?",
                      (time.time(), run_id))
     conn.close()

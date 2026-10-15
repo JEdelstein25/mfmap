@@ -147,6 +147,37 @@ native SQL procedure keeps its logic in the DDL; its `reads`, `writes` and `call
 scan of the body, so check them against it. The Parser tab lists every called procedure and flags
 the ones with no `CREATE PROCEDURE` in the repository.
 
+### Resolvers
+
+Resolvers write entities and relationships to the store's `entities` and `relationships` tables,
+each with the file and line it came from and the resolver that wrote it. `mfmap parse` runs them
+all at the end; `mfmap resolve [names]` runs them again, replacing what each one wrote before.
+Endpoints are written `type:name`, such as `program:COACTUPC`, `transaction:CAUP`,
+`screen:COSGN00.COSGN0A`, `job:POSTTRAN`, `dataset:AWS.ACCTDATA` or
+`paragraph:COACTUPC.2000-PROCESS`.
+
+- `programs`: calls between programs, data access, PERFORM and GO TO between paragraphs, CICS
+  screens sent and received, and transactions started or returned to.
+- `cics`: transactions and the programs they start, from CSD `DEFINE` statements, and screens from
+  BMS map source.
+- `jcl`: which job or procedure runs which program in each step (including programs run through
+  TSO batch with `RUN PROGRAM`), the datasets their DD statements name, and each program's batch
+  file reads and writes matched to those datasets through its `ASSIGN` names.
+
+To resolve something else, such as API definitions or a scheduler's job order, add a module to
+`mfmap/resolvers/` with a `NAME` and a `resolve(ctx)` function that yields `Entity` and
+`Relationship` facts; `ctx` gives the store connection, the parsed programs and the repository's
+files. For what needs judgment, such as which paragraphs hold business logic, record it:
+
+```sh
+mfmap record business-logic paragraph:COACTUPC.2000-PROCESS --note "Applies the interest rate" \
+  --evidence app/cbl/COACTUPC.cbl:812
+mfmap record exposes api:/accounts program:INQACC --evidence src/api/accounts.yaml:12
+```
+
+Recorded facts belong to the resolver `agent` and stay when resolvers run again. `mfmap facts`
+includes all entities and relationships, and the Parser tab counts them.
+
 ### Dynamic SQL and commit points
 
 `PREPARE` and `EXECUTE IMMEDIATE` become Db2 access with mode `unknown` and `resolved`
