@@ -5,7 +5,8 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""``cobolgraph serve``: the report page, refreshed while a parse runs or the notes change."""
+"""``cobolgraph serve``: the Notes, Parser and Backlog tabs, refreshed while a parse runs or the notes
+change. Answers typed on the Notes tab are saved to the store's questions."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
+from . import questions
 from .report import backlog, report
 from .store import connect
 
@@ -56,14 +58,25 @@ def make_handler(store: Path, spec: Optional[str]):
             if url.path in ("/", "/index.html"):
                 self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             elif url.path == "/api/report":
-                markdown, status = report(store, spec)
-                body = {"markdown": markdown, "backlog": backlog(store, spec), **status}
+                body = {**report(store), "backlog": backlog(store, spec)}
                 self.send(200, json.dumps(body).encode(), "application/json")
             elif url.path == "/api/source":
                 found = source(store, query.get("path", ""), int(query.get("line", "1")))
                 self.send(200 if found else 404, json.dumps(found).encode(), "application/json")
             else:
                 self.send(404, b"not found", "text/plain")
+
+        def do_POST(self):
+            if urlparse(self.path).path != "/api/answer":
+                self.send(404, b"not found", "text/plain")
+                return
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+                saved = questions.answer(store, str(body["id"]), str(body.get("answer") or ""), "page")
+            except (ValueError, KeyError) as e:
+                self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
+                return
+            self.send(200, json.dumps(saved).encode(), "application/json")
 
     return Handler
 

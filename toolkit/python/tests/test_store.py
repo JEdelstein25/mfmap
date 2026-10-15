@@ -16,8 +16,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cobolgraph import store
-from cobolgraph.report import add_note, backlog, report
+from cobolgraph import questions, store
+from cobolgraph.report import add_note, backlog, report, report_markdown
 from cobolgraph.serve import source
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -90,26 +90,21 @@ class StoreTest(unittest.TestCase):
     def test_report_and_source_access(self):
         self.parse()
         add_note(self.store, "Added MQ copybooks; COPAUA0C still fails at app/x.cbl:12.")
-        markdown, status = report(self.store)
-        self.assertEqual(status["run"]["status"], "finished")
+        page = report(self.store)
+        markdown = page["parser"]
+        self.assertEqual(page["run"]["status"], "finished")
         self.assertIn("1 clean, 0 with errors, 0 crashed, 0 reused", markdown)
         self.assertIn("- 1 program (`.cbl` and `.cob` files).", markdown)
         self.assertIn("4 calls between programs: 2 name the program, 1 use a data item's VALUE, "
                       "1 are set at run time (1 with names the program MOVEs into them).", markdown)
         self.assertIn("- SAMPLE XCTL `WS-NEXT-PGM` at SAMPLE.cbl:79, maybe SAMPNXT", markdown)
         self.assertIn("Copybooks found in folders: `cpy` (1)", markdown)
-        self.assertIn("COPAUA0C still fails", markdown)
-        self.assertIn("_Not ready.", markdown)
+        self.assertIn("COPAUA0C still fails", page["notes"])
+        self.assertIn("_Not ready.", backlog(self.store))
 
         (self.src / "migration-spec.json").write_text(json.dumps({"units": [
             {"id": "U2", "name": "Later", "wave": 2, "dependsOn": ["U1"]},
             {"id": "U1", "name": "First", "wave": 1, "programs": ["SAMPLE"]}]}))
-        markdown, _ = report(self.store, str(self.src / "migration-spec.json"))
-        summary = markdown[markdown.index("## Backlog"):]
-        self.assertLess(summary.index("### Wave 1"), summary.index("### Wave 2"))
-        self.assertIn("- **U1** First; programs: SAMPLE", summary)
-        self.assertIn("- **U2** Later; depends on: U1", summary)
-
         spec = json.loads((self.src / "migration-spec.json").read_text())
         spec["units"][1]["interfaces"] = [{"name": "ACCT-REC", "layout": "CVACT01Y"}]
         spec["units"][1]["acceptanceChecks"] = ["Balances match the batch report for every account"]
@@ -132,6 +127,29 @@ class StoreTest(unittest.TestCase):
                          "CALL 'SAMPUTIL' USING WS-AMOUNT")
         self.assertIsNotNone(source(self.store, str(self.src / "cpy" / "SAMPREC.cpy"), 1))
         self.assertIsNone(source(self.store, str(self.jar), 1))
+
+    def test_questions_open_first_and_answers_reopen(self):
+        self.parse()
+        first = questions.ask(self.store, "Does LEDREB still run nightly?", found="CALL at SAMPLE.cbl:40",
+                              default="Yes; it moves with the ledger unit", affects="Which wave owns it")
+        questions.ask(self.store, "Is the GL export still used?")
+        questions.answer(self.store, first["id"].lower(), "No, retired in 2019", "page")
+
+        stored = report(self.store)["questions"]
+        self.assertEqual([q["id"] for q in stored], ["Q1", "Q2"])
+        self.assertEqual((stored[0]["answer"], stored[0]["by"]), ("No, retired in 2019", "page"))
+        markdown = report_markdown(report(self.store))
+        # Open questions come before answered ones, whatever order they were asked in.
+        self.assertLess(markdown.index("**Q2**"), markdown.index("**Q1**"))
+        self.assertIn("1 open, 1 answered.", markdown)
+        self.assertIn("  - Answer: No, retired in 2019", markdown)
+
+        questions.answer(self.store, "Q1", "  ", "agent")
+        self.assertIsNone(questions.load(self.store)[0]["answer"])
+        self.assertEqual(questions.ask(self.store, "Third?")["id"], "Q3")
+        with self.assertRaises(KeyError):
+            questions.answer(self.store, "Q9", "x", "agent")
+
 
 if __name__ == "__main__":
     unittest.main()

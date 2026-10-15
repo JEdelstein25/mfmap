@@ -46,31 +46,37 @@ the programs that need it. `--force` parses everything again.
 
 ```sh
 cobolgraph serve            # http://127.0.0.1:8765/
-cobolgraph report           # the same page as Markdown, for an agent to read
+cobolgraph report           # the Notes and Parser tabs as Markdown, for an agent to read
 cobolgraph backlog          # the Backlog tab as Markdown
 cobolgraph note "Added the MQ copybook folder; only the 3 MQ programs were parsed again."
+cobolgraph question "Does the nightly LEDREB rebuild still run?" \
+  --found "CALL 'UTP\LEDREB' at GLEDG/GLP010.CBL:212; no schedule in the repository" \
+  --default "It runs nightly and moves with the ledger unit" --affects "Which wave owns it"
+cobolgraph questions        # every question, open ones first, with answers
+cobolgraph answer Q3 "Retired in 2019"   # an empty answer reopens it
 ```
 
-The **Notes** tab explains how the map was built and refreshes while a parse runs or the notes change:
+The page refreshes while a parse runs or the notes change. It has three tabs:
 
-- **Inputs:** the programs, the folder each copybook came from, the copybooks the parser supplied
-  and the ones it could not find.
-- **Parse Errors:** grouped by message, with locations.
-- **What the Parser Found:** paragraphs, statements, data items, calls by how their targets were
-  resolved, data access by kind of store, and the calls set at run time.
-- **Count Check:** graph counts compared with the text scan.
-- **Agent Notes:** `.cobolgraph/notes.md`, which the agent (or anyone) adds to with `cobolgraph note` or
-  edits directly. Write what was done, what was found and why.
-- **Backlog:** units by wave and open questions from `migration-spec.json`, once it has units. The
-  file is looked for in the parse root and next to the store; `--spec` names another.
+- **Notes** is for the people the migration depends on. It starts with **Open Questions**: what the
+  source cannot answer, each with what the agent found, the default it is going ahead with and
+  what an answer would change. None of them block the work. Anyone with the page can type an answer;
+  the agent reads answers with `cobolgraph questions`. Questions and answers are kept in
+  `.cobolgraph/questions.json`. Below them are the **Agent Notes** from `.cobolgraph/notes.md`, which
+  the agent (or anyone) adds to with `cobolgraph note` or edits directly.
+- **Parser** shows how the map was built: the programs and the folder each copybook came from, the
+  copybooks the parser supplied or could not find, parse errors grouped by message, what the parser
+  found (paragraphs, statements, data items, calls by how their targets were resolved, data access
+  by kind of store, calls set at run time) and the count check against the text scan.
+- **Backlog** lists every unit in wave order with all of its fields from `migration-spec.json`
+  (short lists on one line, longer ones and objects as nested bullets, empty fields left out)
+  followed by its `units/<unit ID>.md` file. The file is looked for in the parse root and next to
+  the store; `--spec` names another.
 
-A second tab, **Backlog**, lists every unit in wave order with all of its fields from
-`migration-spec.json` (short lists on one line, longer ones and objects as nested bullets, empty
-fields left out) followed by its `units/<unit ID>.md` file, then the open questions.
-
-Any `file.cbl:line` reference on either tab opens the source around that line. The server binds to
-127.0.0.1; reach it from elsewhere through a tunnel or port forward. To keep the notes in Git while
-ignoring the rest of the store, add `.cobolgraph/*` and `!.cobolgraph/notes.md` to `.gitignore`.
+Any `file.cbl:line` reference opens the source around that line. The server binds to 127.0.0.1;
+reach it from elsewhere through a tunnel or port forward. To keep the notes and questions in Git
+while ignoring the rest of the store, add `.cobolgraph/*`, `!.cobolgraph/notes.md` and
+`!.cobolgraph/questions.json` to `.gitignore`.
 
 ### Copybooks IBM supplies
 

@@ -5,9 +5,9 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""The Notes page as Markdown: what the parser read and found, the agent's notes,
-and the backlog once ``migration-spec.json`` has one. ``cobolgraph serve`` shows it; ``cobolgraph
-report`` prints it."""
+"""The pages ``cobolgraph serve`` shows, as Markdown: Notes (open questions for a person and the
+agent's notes), Parser (what the parser read and found) and Backlog (every unit in
+``migration-spec.json``). ``cobolgraph report`` prints the first two."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from . import questions
 from .store import connect, latest_files
 
 NOTES = "notes.md"
@@ -44,8 +45,9 @@ def spec_path(store: Path, root: str, spec: Optional[str]) -> Optional[Path]:
     return None
 
 
-def report(store: str | os.PathLike, spec: Optional[str] = None) -> tuple[str, dict]:
-    """The page as Markdown, and the latest run's status."""
+def report(store: str | os.PathLike) -> dict:
+    """The Notes and Parser tabs: open questions for a person, the agent's notes as Markdown, and
+    what the parser read and found as Markdown, with the latest run's status."""
     store = Path(store).resolve()
     conn = connect(store)
     try:
@@ -55,9 +57,9 @@ def report(store: str | os.PathLike, spec: Optional[str] = None) -> tuple[str, d
         files = latest_files(conn)
         current = {f["path"] for f in files}
         status = collections.Counter(f["status"] for f in files)
-        out = [f"# Notes\n\n`{root}`\n"]
+        parser = ["# Parser\n"]
         if not run:
-            out.append("No parse has run yet. Run `cobolgraph parse` to start.\n")
+            parser.append("No parse has run yet. Run `cobolgraph parse` to start.\n")
         else:
             done = sum(status[s] for s in ("clean", "errors", "crash"))
             reused = conn.execute("SELECT COUNT(*) FROM run_files WHERE run_id = ? AND cached = 1",
@@ -65,19 +67,24 @@ def report(store: str | os.PathLike, spec: Optional[str] = None) -> tuple[str, d
             when = time.strftime("%Y-%m-%d %H:%M", time.localtime(run["finished"] or run["started"]))
             state = f"parsing, {done} of {len(files)} done" if run["status"] == "running" \
                 else f"finished {when}"
-            out.append(f"Run {run['id']}, {state}: {status['clean']} clean, {status['errors']} with "
-                       f"errors, {status['crash']} crashed, {reused} reused from the previous run.\n")
-            out += parser_sections(conn, files, current, rel)
+            parser.append(f"Run {run['id']}, {state}: {status['clean']} clean, {status['errors']} with "
+                          f"errors, {status['crash']} crashed, {reused} reused from the previous run.\n")
+            parser += parser_sections(conn, files, current, rel)
     finally:
         conn.close()
 
-    notes = store / NOTES
-    out.append("## Agent Notes\n")
-    out.append(notes.read_text(encoding="utf-8").strip() + "\n" if notes.is_file() else
-               "_No notes yet. Add one with `cobolgraph note \"...\"` or edit "
-               f"`{rel(str(notes))}`._\n")
-    out += backlog_section(spec_path(store, root, spec), rel)
-    return "\n".join(out), {"run": dict(run) if run else None, "root": root}
+    path = store / NOTES
+    notes = ["## Agent Notes\n", path.read_text(encoding="utf-8").strip() + "\n" if path.is_file() else
+             "_No notes yet. Add one with `cobolgraph note \"...\"` or edit "
+             f"`{rel(str(path))}`._\n"]
+    return {"root": root, "run": dict(run) if run else None, "questions": questions.load(store),
+            "notes": "\n".join(notes), "parser": "\n".join(parser)}
+
+
+def report_markdown(page: dict) -> str:
+    """Both tabs as one Markdown document, for ``cobolgraph report``."""
+    return "\n".join([f"# Notes\n\n`{page['root']}`\n", *questions.markdown(page["questions"]),
+                      page["notes"], page["parser"].replace("# Parser", "## Parser", 1)])
 
 
 def parser_sections(conn, files, current, rel) -> list[str]:
@@ -207,27 +214,6 @@ def questions_section(spec: dict) -> list[str]:
         default = pick(q, "default", "defaultassumption") if isinstance(q, dict) else None
         out.append(f"- {text}" + (f" _Default: {default}_" if default else ""))
     return out + [""]
-
-
-def backlog_section(path: Optional[Path], rel) -> list[str]:
-    out = ["\n## Backlog\n"]
-    spec, missing = load_spec(path, rel)
-    if missing:
-        return out + [missing]
-    units = pick(spec, "units", "backlog")
-    out.append(f"{len(units)} units from `{rel(str(path))}`. The Backlog tab "
-               "(`cobolgraph backlog`) has every unit in full.\n")
-    for wave, members in by_wave(units):
-        out.append(f"### {wave}\n")
-        for u in members:
-            line = f"- **{name(u)}** {pick(u, 'name', 'title') or ''}".rstrip()
-            for label, keys in (("programs", ("programs",)), ("depends on", ("dependencies", "dependson"))):
-                values = pick(u, *keys)
-                if values:
-                    line += f"; {label}: " + ", ".join(name(v) for v in values)
-            out.append(line)
-        out.append("")
-    return out + questions_section(spec)
 
 
 def label(key: str) -> str:

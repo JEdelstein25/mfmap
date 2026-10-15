@@ -5,7 +5,7 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""Command line: ``python -m cobolgraph parse|summary|facts``."""
+"""Command line: ``python -m cobolgraph parse|serve|question|...``; ``--help`` lists every command."""
 
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ import json
 import os
 import sys
 
-from . import mq
+from . import mq, questions
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, data_access
 from .run import find_sources
-from .report import add_note, backlog, report
+from .report import add_note, backlog, report, report_markdown
 from .serve import serve
 from .store import parse
 
@@ -117,9 +117,8 @@ def main(argv=None) -> int:
     v.add_argument("--port", type=int, default=8765)
     v.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
 
-    r = commands.add_parser("report", help="print the report page as Markdown")
+    r = commands.add_parser("report", help="print the Notes and Parser tabs as Markdown")
     r.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
-    r.add_argument("--spec", help="migration-spec.json (default: next to the store or in the parse root)")
 
     b = commands.add_parser("backlog", help="print every backlog unit in full as Markdown")
     b.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
@@ -128,6 +127,21 @@ def main(argv=None) -> int:
     n = commands.add_parser("note", help="add a timestamped note to the report")
     n.add_argument("text", help="Markdown; file:line references link to the source")
     n.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+
+    q = commands.add_parser("question", help="add an open question for a person to the Notes tab")
+    q.add_argument("text", help="the question; file:line references link to the source")
+    q.add_argument("--found", help="what you found that leaves it open")
+    q.add_argument("--default", help="the assumption you go ahead with until it is answered")
+    q.add_argument("--affects", help="what the answer would change")
+    q.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+
+    qs = commands.add_parser("questions", help="print the open questions and their answers")
+    qs.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
+
+    a = commands.add_parser("answer", help="record the answer to a question")
+    a.add_argument("id", help="question ID, such as Q3")
+    a.add_argument("text", help="the answer; an empty answer reopens the question")
+    a.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
 
     s = commands.add_parser("summary", help="parse rate, counts and common errors")
     s.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
@@ -177,7 +191,21 @@ def main(argv=None) -> int:
         serve(args.store, args.host, args.port, args.spec)
         return 0
     if args.command == "report":
-        print(report(args.store, args.spec)[0])
+        print(report_markdown(report(args.store)))
+        return 0
+    if args.command == "question":
+        entry = questions.ask(args.store, args.text, args.found, args.default, args.affects)
+        print(f"added {entry['id']}")
+        return 0
+    if args.command == "questions":
+        print("\n".join(questions.markdown(questions.load(args.store))))
+        return 0
+    if args.command == "answer":
+        try:
+            entry = questions.answer(args.store, args.id, args.text, "agent")
+        except KeyError as e:
+            parser.error(str(e.args[0]))
+        print(f"{entry['id']}: " + ("answered" if entry["answer"] else "reopened"))
         return 0
     if args.command == "backlog":
         print(backlog(args.store, args.spec))

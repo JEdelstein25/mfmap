@@ -37,17 +37,35 @@ SPDX-License-Identifier: EPL-2.0
   .box { background: #fff; border-radius: 8px; width: min(900px, 94vw); max-height: 84vh; overflow: auto; padding: 14px 18px; }
   .box pre { background: none; padding: 0; } .box pre > span { display: block; } .box .hl { background: #fff2b8; }
   .box .ln { color: #8a8984; display: inline-block; width: 4.5em; user-select: none; }
+  .intro { color: #4a4a46; margin: 4px 0 18px; }
+  .q { border: 1px solid #e6e5e1; border-radius: 8px; background: #fff; padding: 14px 16px; margin: 12px 0; }
+  .q.answered { background: #f6f6f3; }
+  .q .head { display: flex; gap: 10px; align-items: baseline; }
+  .q .id { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8a8984; flex: none; }
+  .q .text { font-weight: 600; }
+  .q .tag { margin-left: auto; flex: none; font-size: 12px; color: #8a8984; }
+  .q dl { display: grid; grid-template-columns: 7em 1fr; gap: 4px 12px; margin: 10px 0 0; font-size: 14px; }
+  .q dt { color: #8a8984; } .q dd { margin: 0; }
+  .q form { display: flex; gap: 8px; margin-top: 12px; align-items: flex-start; }
+  .q textarea { flex: 1; min-height: 38px; resize: vertical; font: inherit; font-size: 14px; padding: 7px 9px; border: 1px solid #d9d8d3; border-radius: 6px; background: #fff; }
+  .q textarea:focus { outline: 2px solid #c9d3f7; border-color: #3a5bd9; }
+  .q button { font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 6px; border: 1px solid #1d1d1b; background: #1d1d1b; color: #fff; cursor: pointer; }
+  .q button.plain { background: none; color: #3a5bd9; border: 0; padding: 0; font-size: 13px; }
+  .q .answer { margin-top: 10px; font-size: 14px; } .q .answer strong { color: #2f7a3d; font-weight: 600; }
+  .empty { color: #8a8984; font-style: italic; }
   .close { float: right; border: 0; background: none; font-size: 20px; cursor: pointer; color: #8a8984; }
 </style>
 </head>
 <body>
-<header><div id="status">loading</div><nav><a href="#" data-tab="report">Notes</a><a href="#backlog" data-tab="backlog">Backlog</a></nav></header>
+<header><div id="status">loading</div><nav><a href="#" data-tab="notes">Notes</a><a href="#parser" data-tab="parser">Parser</a><a href="#backlog" data-tab="backlog">Backlog</a></nav></header>
 <article id="page"></article>
 <div class="modal" id="modal"><div class="box" id="box"></div></div>
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let root = "", data = null, shown = "";
-const tab = () => location.hash === "#backlog" ? "backlog" : "report";
+const tab = () => ({ "#backlog": "backlog", "#parser": "parser" })[location.hash] || "notes";
+// Answers being typed, by question ID, so a refresh does not lose them.
+const drafts = {}, editing = new Set();
 
 // Inline Markdown, plus file:line references to COBOL sources, which open the source.
 function inline(text) {
@@ -100,15 +118,53 @@ async function refresh() {
   setTimeout(refresh, running ? 1500 : 4000);
 }
 
+function question(q) {
+  const rows = [["Found", q.found], ["Default", q.default], ["Affects", q.affects]].filter(([, v]) => v);
+  const form = !q.answer || editing.has(q.id);
+  return `<section class="q${q.answer ? " answered" : ""}" data-id="${esc(q.id)}">
+    <div class="head"><span class="id">${esc(q.id)}</span><span class="text">${inline(q.question)}</span>
+      <span class="tag">${q.answer ? "answered" + (q.by === "page" ? " here" : "") : "open"}</span></div>
+    ${rows.length ? `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${inline(v)}</dd>`).join("")}</dl>` : ""}
+    ${form ? `<form><textarea name="answer" placeholder="Your answer">${esc(drafts[q.id] ?? q.answer ?? "")}</textarea><button>Save</button></form>`
+      : `<div class="answer"><strong>Answer:</strong> ${inline(q.answer)} <button class="plain" data-edit>Change</button></div>`}
+  </section>`;
+}
+
+function notesPage() {
+  const qs = data.questions || [], open = qs.filter(q => !q.answer);
+  const list = [...open, ...qs.filter(q => q.answer)];
+  return `<h1>Notes</h1><p><code>${esc(root)}</code></p><h2>Open Questions</h2>` + (qs.length
+    ? `<p class="intro">${open.length} open, ${qs.length - open.length} answered. None of these block the work: the agent goes ahead with the default for each one. Answer any of them to change the plan.</p>${list.map(question).join("")}`
+    : `<p class="empty">No questions yet. The agent adds them here as it finds things the source cannot answer.</p>`)
+    + markdown(data.notes);
+}
+
 function show() {
   if (!data) return;
-  const md = tab() === "backlog" ? data.backlog : data.markdown;
-  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab()));
-  if (md !== shown) { shown = md; document.getElementById("page").innerHTML = markdown(md); }
+  const t = tab();
+  const html = t === "backlog" ? markdown(data.backlog) : t === "parser" ? markdown(data.parser) : notesPage();
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.tab === t));
+  // Leave the page alone while an answer form has focus, so typing or saving is not interrupted.
+  if (html !== shown && !document.activeElement?.closest(".q form")) { shown = html; document.getElementById("page").innerHTML = html; }
 }
+
+document.addEventListener("input", e => { const q = e.target.closest(".q"); if (q) drafts[q.dataset.id] = e.target.value; });
+document.addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = e.target.closest(".q"), id = q.dataset.id, button = e.target.querySelector("button");
+  button.disabled = true; button.textContent = "Saving";
+  const res = await fetch("api/answer", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, answer: e.target.answer.value }) });
+  if (!res.ok) { button.disabled = false; button.textContent = "Save"; return; }
+  const saved = await res.json();
+  delete drafts[id]; editing.delete(id);
+  data.questions = data.questions.map(x => x.id === id ? saved : x);
+  document.activeElement?.blur(); shown = ""; show();
+});
 window.addEventListener("hashchange", () => { shown = ""; show(); window.scrollTo(0, 0); });
 
 document.addEventListener("click", async e => {
+  if (e.target.closest("[data-edit]")) { editing.add(e.target.closest(".q").dataset.id); shown = ""; show(); return; }
   const src = e.target.closest(".src");
   const modal = document.getElementById("modal"), box = document.getElementById("box");
   if (e.target.closest(".close") || e.target === modal) { modal.classList.remove("open"); return; }
