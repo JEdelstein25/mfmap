@@ -1,6 +1,6 @@
 # About This Fork
 
-This repository is a modified version of Eclipse COBOL Language Support (Che4z LSP for COBOL), maintained by Amp. It is not an Eclipse Foundation project, and neither the Eclipse Foundation nor Broadcom endorses it.
+mfmap is a modified version of Eclipse COBOL Language Support (Che4z LSP for COBOL), maintained by Amp. It is not an Eclipse Foundation project, and neither the Eclipse Foundation nor Broadcom endorses it.
 
 - Upstream: https://github.com/eclipse-che4z/che-che4z-lsp-for-cobol
 - Based on upstream commit `2bac488b85dd1574b6ffe0524870a963695b04b4` (October 9, 2026)
@@ -28,20 +28,11 @@ All changes are in the language server under `server/`. Each modified file lists
 
 ## Toolkit
 
-[toolkit/python](toolkit/python) is `cobolgraph`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.cobolgraph/map.db`, SQLite) that re-parses only changed programs, and `cobolgraph serve` shows a page, refreshed while a parse runs, with three tabs: Notes (open questions for people to answer, and the agent's notes), Parser (how the map was built) and Backlog. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository.
+[toolkit/python](toolkit/python) is `mfmap`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.mfmap/map.db`, SQLite) that re-parses only changed programs, and `mfmap serve` shows a page, refreshed while a parse runs, with three tabs: Notes (open questions for people to answer, and the agent's notes), Parser (how the map was built) and Backlog. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository.
 
 ## Set Up
 
-You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
-
-```sh
-git clone --branch v0.1.4 https://github.com/JEdelstein25/parsebol tools/cobol-parser
-(cd tools/cobol-parser/server && mvn -B -q -Dmaven.test.skip -pl engine -am package)
-tools/cobol-parser/toolkit/cobolgraph parse app -cf app/cpy -ce cpy
-tools/cobol-parser/toolkit/cobolgraph serve
-```
-
-The build writes `server/engine/target/server.jar`; the first build downloads Maven dependencies and takes a few minutes. `toolkit/cobolgraph` runs the toolkit from the checkout with that jar, so nothing else needs installing. After changing the parser, build again; the next parse re-parses every program because the jar changed. [toolkit/python/README.md](toolkit/python/README.md) describes every command.
+See [README.md](README.md#set-up).
 
 ## Distributing This Fork
 

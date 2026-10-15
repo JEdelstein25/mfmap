@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: EPL-2.0
 """Open questions for a person: what the source cannot answer, with what the agent found and the
 default it is going ahead with. They live in ``<store>/questions.json``; the agent adds them with
-``cobolgraph question`` and a person answers them on the Notes tab or through the agent."""
+``mfmap question`` and a person answers them on the Notes tab or through the agent."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def markdown(questions: list[dict]) -> list[str]:
     open_ = [q for q in questions if not q.get("answer")]
     out = ["## Open Questions\n"]
     if not questions:
-        return out + ["_None yet. The agent adds them with `cobolgraph question`._\n"]
+        return out + ["_None yet. The agent adds them with `mfmap question`._\n"]
     out.append(f"{len(open_)} open, {len(questions) - len(open_)} answered. The agent goes ahead with "
                "the default for each open question; an answer changes the plan.\n")
     for q in open_ + [q for q in questions if q.get("answer")]:

@@ -8,9 +8,9 @@ which is available at https://www.eclipse.org/legal/epl-2.0/
 SPDX-License-Identifier: EPL-2.0
 -->
 
-# cobolgraph
+# mfmap
 
-`cobolgraph` reads the output of `server.jar analysis --graph` and gives you typed COBOL programs:
+`mfmap` reads the output of `server.jar analysis --graph` and gives you typed COBOL programs:
 data items with their clauses, paragraphs, typed statements, and references resolved by node ID.
 It also lists calls between programs, Db2 stored procedure calls with their definitions, reads
 and writes of Db2 tables, VSAM files, batch files, IMS segments and CICS queues, dynamic SQL, and
@@ -23,8 +23,8 @@ application's repository, run the parser over every `.cbl` and `.cob` file:
 
 ```sh
 pip install ./toolkit/python
-export PARSEBOL_JAR=$PWD/server/engine/target/server.jar
-cobolgraph parse app -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j 6
+export MFMAP_JAR=$PWD/server/engine/target/server.jar
+mfmap parse app -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY -j 6
 ```
 
 `-j` sets how many parser processes run at once (default 4). Each one stays up and parses program
@@ -33,7 +33,7 @@ records the results. CardDemo's 44 programs take about 9 seconds with `-j 4`; 44
 A parser process that crashes or takes longer than 15 minutes on one program is replaced, and that
 program is recorded as crashed.
 
-Results go into a store, `.cobolgraph/` by default (`--store` to change it). The store holds `map.db`, a SQLite database, and `graphs/`, one graph
+Results go into a store, `.mfmap/` by default (`--store` to change it). The store holds `map.db`, a SQLite database, and `graphs/`, one graph
 file per program. Each run records every file's status and diagnostics and the programs, calls and
 data access in it, committing each file as soon as it finishes. A program that fails to analyse
 still gets a graph file, with `crash` set to the error.
@@ -46,15 +46,15 @@ the programs that need it. `--force` parses everything again.
 ## Follow along
 
 ```sh
-cobolgraph serve            # http://127.0.0.1:8765/
-cobolgraph report           # the Notes and Parser tabs as Markdown, for an agent to read
-cobolgraph backlog          # the Backlog tab as Markdown
-cobolgraph note "Added the MQ copybook folder; only the 3 MQ programs were parsed again."
-cobolgraph question "Does the nightly LEDREB rebuild still run?" \
+mfmap serve            # http://127.0.0.1:8765/
+mfmap report           # the Notes and Parser tabs as Markdown, for an agent to read
+mfmap backlog          # the Backlog tab as Markdown
+mfmap note "Added the MQ copybook folder; only the 3 MQ programs were parsed again."
+mfmap question "Does the nightly LEDREB rebuild still run?" \
   --found "CALL 'UTP\LEDREB' at GLEDG/GLP010.CBL:212; no schedule in the repository" \
   --default "It runs nightly and moves with the ledger unit" --affects "Which wave owns it"
-cobolgraph questions        # every question, open ones first, with answers
-cobolgraph answer Q3 "Retired in 2019"   # an empty answer reopens it
+mfmap questions        # every question, open ones first, with answers
+mfmap answer Q3 "Retired in 2019"   # an empty answer reopens it
 ```
 
 The page refreshes while a parse runs or the notes change. It has three tabs:
@@ -62,9 +62,9 @@ The page refreshes while a parse runs or the notes change. It has three tabs:
 - **Notes** is for the people the migration depends on. It starts with **Open Questions**: what the
   source cannot answer, each with what the agent found, the default it is going ahead with and
   what an answer would change. None of them block the work. Anyone with the page can type an answer;
-  the agent reads answers with `cobolgraph questions`. Questions and answers are kept in
-  `.cobolgraph/questions.json`. Below them are the **Agent Notes** from `.cobolgraph/notes.md`, which
-  the agent (or anyone) adds to with `cobolgraph note` or edits directly.
+  the agent reads answers with `mfmap questions`. Questions and answers are kept in
+  `.mfmap/questions.json`. Below them are the **Agent Notes** from `.mfmap/notes.md`, which
+  the agent (or anyone) adds to with `mfmap note` or edits directly.
 - **Parser** shows how the map was built: the programs and the folder each copybook came from, the
   copybooks the parser supplied or could not find, parse errors grouped by message, what the parser
   found (paragraphs, statements, data items, calls by how their targets were resolved, data access
@@ -76,8 +76,8 @@ The page refreshes while a parse runs or the notes change. It has three tabs:
 
 Any `file.cbl:line` reference opens the source around that line. The server binds to 127.0.0.1;
 reach it from elsewhere through a tunnel or port forward. To keep the notes and questions in Git
-while ignoring the rest of the store, add `.cobolgraph/*`, `!.cobolgraph/notes.md` and
-`!.cobolgraph/questions.json` to `.gitignore`.
+while ignoring the rest of the store, add `.mfmap/*`, `!.mfmap/notes.md` and
+`!.mfmap/questions.json` to `.gitignore`.
 
 ### Copybooks IBM supplies
 
@@ -90,8 +90,8 @@ while ignoring the rest of the store, add `.cobolgraph/*`, `!.cobolgraph/notes.m
   client. They are IBM's files under IBM's license, so this project does not ship them:
 
   ```sh
-  cobolgraph fetch-mq-copybooks --out mq-copybooks --accept-license
-  cobolgraph parse app -cf app/cpy -cf mq-copybooks -ce cpy
+  mfmap fetch-mq-copybooks --out mq-copybooks --accept-license
+  mfmap parse app -cf app/cpy -cf mq-copybooks -ce cpy
   ```
 
   The command writes the 64-bit copybooks as `NAME.cpy`, IBM's English license files under
@@ -100,9 +100,9 @@ while ignoring the rest of the store, add `.cobolgraph/*`, `!.cobolgraph/notes.m
 ## Check the result
 
 ```sh
-cobolgraph summary              # parse rate, statement counts, most common errors
-cobolgraph crosscheck -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY
-cobolgraph facts --root . > facts.json   # programs, calls, data access, files, commits, procedures
+mfmap summary              # parse rate, statement counts, most common errors
+mfmap crosscheck -cf app/cpy -cf app/cpy-bms -ce cpy -ce CPY
+mfmap facts --root . > facts.json   # programs, calls, data access, files, commits, procedures
 ```
 
 These read the store's latest run; pass a folder of graph files instead to read those.
@@ -113,9 +113,9 @@ difference before trusting either one.
 ## Use the model
 
 ```python
-import cobolgraph as cg
+import mfmap as cg
 
-project = cg.Project.load(".cobolgraph")   # or a folder of graph files
+project = cg.Project.load(".mfmap")   # or a folder of graph files
 p = project.program("COACTUPC")
 
 item = p.data_item("ACCT-CURR-BAL")

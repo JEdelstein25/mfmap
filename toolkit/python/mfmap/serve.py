@@ -5,7 +5,7 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""``cobolgraph serve``: the Notes, Parser and Backlog tabs, refreshed while a parse runs or the notes
+"""``mfmap serve``: the Notes, Parser and Backlog tabs, refreshed while a parse runs or the notes
 change. Answers typed on the Notes tab are saved to the store's questions."""
 
 from __future__ import annotations

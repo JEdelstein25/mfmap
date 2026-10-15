@@ -64,7 +64,7 @@ def fetch(out_dir: str | Path, version: Optional[str] = None) -> tuple[str, list
     (out / "SOURCE.txt").write_text(
         f"IBM MQ {version} COBOL copybooks (inc/cobcpy64) from {url}\n"
         "These files are IBM's and are licensed under the IBM MQ license terms in licenses/.\n"
-        "They are not part of parsebol or cobolgraph and are not covered by the EPL.\n",
+        "They are not part of mfmap and are not covered by the EPL.\n",
         encoding="utf-8",
     )
     return version, sorted(copybooks)

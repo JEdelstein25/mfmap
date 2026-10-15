@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/JEdelstein25/parsebol/schema/graph-v1.schema.json",
-  "title": "parsebol graph output, version 1",
+  "$id": "https://github.com/JEdelstein25/mfmap/schema/graph-v1.schema.json",
+  "title": "mfmap graph output, version 1",
   "description": "Output of `server.jar analysis --graph`. Copyright (c) 2026 Amp. SPDX-License-Identifier: EPL-2.0.",
   "type": "object",
   "required": ["uri", "language"],

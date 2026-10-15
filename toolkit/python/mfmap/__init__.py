@@ -5,7 +5,7 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""Typed COBOL program model over parsebol's ``analysis --graph`` output."""
+"""Typed COBOL program model over mfmap's ``analysis --graph`` output."""
 
 from .model import (
     Access,

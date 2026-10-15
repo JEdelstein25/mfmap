@@ -16,9 +16,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cobolgraph import questions, store
-from cobolgraph.report import add_note, backlog, report, report_markdown
-from cobolgraph.serve import source
+from mfmap import questions, store
+from mfmap.report import add_note, backlog, report, report_markdown
+from mfmap.serve import source
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -31,7 +31,7 @@ class StoreTest(unittest.TestCase):
         shutil.copytree(FIXTURES, self.src)
         self.jar = self.tmp / "server.jar"
         self.jar.write_bytes(b"jar")
-        self.store = self.tmp / ".cobolgraph"
+        self.store = self.tmp / ".mfmap"
         self.parsed = []
 
     def fake_parse(self, jar, source, target, options=(), **kwargs):

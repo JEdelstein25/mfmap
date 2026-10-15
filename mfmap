@@ -1,0 +1,24 @@
+#!/bin/sh
+# Copyright (c) 2026 Amp.
+#
+# This program and the accompanying materials are made
+# available under the terms of the Eclipse Public License 2.0
+# which is available at https://www.eclipse.org/legal/epl-2.0/
+#
+# SPDX-License-Identifier: EPL-2.0
+#
+# Run mfmap from this checkout without installing it. Builds the parser (server.jar) the first
+# time; `mfmap build` builds it again after you change it.
+dir=$(cd "$(dirname "$0")" && pwd)
+jar="${MFMAP_JAR:-$dir/server/engine/target/server.jar}"
+build() {
+	echo "mfmap: building the parser; the first build downloads dependencies and takes a few minutes" >&2
+	(cd "$dir/server" && mvn -B -q --no-transfer-progress -Dmaven.test.skip -pl engine -am package) >&2
+}
+if [ "${1:-}" = build ]; then
+	build
+	exit
+fi
+[ -f "$jar" ] || build || exit 1
+export MFMAP_JAR="$jar"
+PYTHONPATH="$dir/toolkit/python${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m mfmap "$@"

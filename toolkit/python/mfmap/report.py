@@ -5,9 +5,9 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""The pages ``cobolgraph serve`` shows, as Markdown: Notes (open questions for a person and the
+"""The pages ``mfmap serve`` shows, as Markdown: Notes (open questions for a person and the
 agent's notes), Parser (what the parser read and found) and Backlog (every unit in
-``migration-spec.json``). ``cobolgraph report`` prints the first two."""
+``migration-spec.json``). ``mfmap report`` prints the first two."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def report(store: str | os.PathLike) -> dict:
         status = collections.Counter(f["status"] for f in files)
         parser = ["# Parser\n"]
         if not run:
-            parser.append("No parse has run yet. Run `cobolgraph parse` to start.\n")
+            parser.append("No parse has run yet. Run `mfmap parse` to start.\n")
         else:
             done = sum(status[s] for s in ("clean", "errors", "crash"))
             reused = conn.execute("SELECT COUNT(*) FROM run_files WHERE run_id = ? AND cached = 1",
@@ -76,14 +76,14 @@ def report(store: str | os.PathLike) -> dict:
 
     path = store / NOTES
     notes = ["## Agent Notes\n", path.read_text(encoding="utf-8").strip() + "\n" if path.is_file() else
-             "_No notes yet. Add one with `cobolgraph note \"...\"` or edit "
+             "_No notes yet. Add one with `mfmap note \"...\"` or edit "
              f"`{rel(str(path))}`._\n"]
     return {"root": root, "run": dict(run) if run else None, "questions": questions.load(store),
             "notes": "\n".join(notes), "parser": "\n".join(parser)}
 
 
 def report_markdown(page: dict) -> str:
-    """Both tabs as one Markdown document, for ``cobolgraph report``."""
+    """Both tabs as one Markdown document, for ``mfmap report``."""
     return "\n".join([f"# Notes\n\n`{page['root']}`\n", *questions.markdown(page["questions"]),
                       page["notes"], page["parser"].replace("# Parser", "## Parser", 1)])
 

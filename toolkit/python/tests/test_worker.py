@@ -15,7 +15,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from cobolgraph.run import GraphWorker
+from mfmap.run import GraphWorker
 
 FAKE = textwrap.dedent('''
     import json, os, sys, time

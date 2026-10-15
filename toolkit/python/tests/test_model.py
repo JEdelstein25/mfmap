@@ -12,9 +12,9 @@ import json
 import unittest
 from pathlib import Path
 
-import cobolgraph as cg
-from cobolgraph.crosscheck import TextScan, graph_counts
-from cobolgraph.run import output_names
+import mfmap as cg
+from mfmap.crosscheck import TextScan, graph_counts
+from mfmap.run import output_names
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCHEMA = Path(__file__).parents[3] / "schema" / "graph-v1.schema.json"
@@ -106,7 +106,7 @@ class ModelTest(unittest.TestCase):
                          [("COMMIT", 96), ("SYNCPOINT ROLLBACK", 97)])
 
     def test_procedures_from_ddl(self):
-        from cobolgraph import procedures as sp
+        from mfmap import procedures as sp
         defined = {d.name: d for d in sp.procedures(sp.find_ddl(FIXTURES / "ddl"))}
         post = defined["CARDDEMO.POST_TRAN"]
         self.assertEqual((post.language, post.program, post.result_sets, post.line), ("COBOL", "POSTTRN", 1, 2))

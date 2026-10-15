@@ -5,7 +5,7 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""Command line: ``python -m cobolgraph parse|serve|question|...``; ``--help`` lists every command."""
+"""Command line: ``python -m mfmap parse|serve|question|...``; ``--help`` lists every command."""
 
 from __future__ import annotations
 
@@ -120,16 +120,16 @@ def summary(project: Project) -> str:
     return "\n".join(lines)
 
 
-STORE = ".cobolgraph"
+STORE = ".mfmap"
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="cobolgraph")
+    parser = argparse.ArgumentParser(prog="mfmap")
     commands = parser.add_subparsers(dest="command", required=True)
 
     p = commands.add_parser("parse", help="parse sources into the store")
     p.add_argument("sources", nargs="+", help="source files or folders")
-    p.add_argument("--jar", default=os.environ.get("PARSEBOL_JAR"), help="server.jar (or $PARSEBOL_JAR)")
+    p.add_argument("--jar", default=os.environ.get("MFMAP_JAR"), help="server.jar (or $MFMAP_JAR)")
     p.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
     p.add_argument("-cf", "--copybooks", action="append", default=[], help="copybook folder")
     p.add_argument("-ce", "--copybook-extension", action="append", default=[], help="copybook extension")
@@ -203,7 +203,7 @@ def main(argv=None) -> int:
         return 0
     if args.command == "parse":
         if not args.jar:
-            parser.error("--jar or $PARSEBOL_JAR is required")
+            parser.error("--jar or $MFMAP_JAR is required")
         sources = find_sources(args.sources)
         statuses = collections.Counter()
 
