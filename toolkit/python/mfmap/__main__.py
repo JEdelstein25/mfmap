@@ -158,7 +158,7 @@ def main(argv=None) -> int:
     p.add_argument("-j", "--jobs", type=int, default=4)
     p.add_argument("--force", action="store_true", help="parse unchanged files again")
     p.add_argument("--ddl", action="append", default=[],
-                   help="DDL file or folder with CREATE PROCEDURE statements, in addition to the "
+                   help="DDL file or folder with CREATE PROCEDURE, TABLE, INDEX or VIEW statements, in addition to the "
                         ".sql, .ddl and .db2 files under the current folder")
 
     v = commands.add_parser("serve", help="serve the report page, refreshed as it changes")

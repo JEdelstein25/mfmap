@@ -68,6 +68,41 @@ def find_ddl(root: str | os.PathLike, extra: Iterable[str | os.PathLike] = ()) -
     return list(dict.fromkeys(found))
 
 
+SCHEMA_DDL = re.compile(r"^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|VIEW)\s", re.I | re.M)
+NOT_DDL_SUFFIXES = {".cbl", ".cob", ".cpy", ".pco", ".sqb", ".md", ".html", ".htm", ".py", ".java",
+                    ".js", ".ts", ".class", ".jar", ".zip", ".gz", ".png", ".jpg", ".pdf", ".db"}
+
+
+TOOL_DIRS = {".git", ".hg", ".svn", ".mfmap", ".amp", ".venv", ".idea", ".vscode", "node_modules"}
+
+
+def find_schema_ddl(root: str | os.PathLike, extra: Iterable[str | os.PathLike] = ()) -> list[Path]:
+    """Files with CREATE TABLE, INDEX or VIEW statements: the DDL files ``find_ddl`` finds, plus
+    other text files under ``root`` (such as JCL that runs DSNTIAD) with such a statement at the
+    start of a line, including in hidden folders other than tool folders such as .git. Program,
+    copybook, documentation, code and binary files are not searched."""
+    found = find_ddl(root, extra)
+    for dirpath, dirnames, filenames in os.walk(root):
+        if "FORK.md" in filenames and dirpath != str(root):
+            dirnames[:] = []
+            continue
+        # Setup folders such as .setup often hold the DDL, so only tool folders are skipped.
+        dirnames[:] = sorted(d for d in dirnames if d not in TOOL_DIRS)
+        for f in sorted(filenames):
+            path = Path(dirpath) / f
+            if path.suffix.lower() in NOT_DDL_SUFFIXES | DDL_SUFFIXES:
+                continue
+            try:
+                if path.stat().st_size > 2_000_000:
+                    continue
+                text = path.read_text(encoding="latin-1")
+                if "\0" not in text[:8192] and SCHEMA_DDL.search(text):
+                    found.append(path)
+            except OSError:
+                continue
+    return list(dict.fromkeys(found))
+
+
 def unquote(name: str) -> str:
     return name.replace('"', "").upper()
 

@@ -19,8 +19,10 @@ import hashlib
 import json
 import os
 import sqlite3
+import subprocess
 import threading
 import time
+import urllib.parse
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Optional, Sequence
@@ -65,6 +67,7 @@ CREATE INDEX IF NOT EXISTS relationships_target ON relationships (target);
 CREATE TABLE IF NOT EXISTS procedures (
   name TEXT, language TEXT, program TEXT, parameters TEXT, result_sets INTEGER,
   reads TEXT, writes TEXT, calls TEXT, path TEXT, line INTEGER);
+CREATE TABLE IF NOT EXISTS ddl (path TEXT, result TEXT);
 CREATE TABLE IF NOT EXISTS file_controls (
   file TEXT, program TEXT, name TEXT, assign TEXT, organization TEXT, access_mode TEXT,
   record_key TEXT, path TEXT, line INTEGER);
@@ -331,6 +334,8 @@ def parse(
             [(d.name, d.language, d.program, json.dumps(d.parameters), d.result_sets, json.dumps(d.reads),
               json.dumps(d.writes), json.dumps(d.calls), d.path, d.line)
              for d in sp.procedures(sp.find_ddl(os.getcwd(), ddl))])
+        conn.execute("DELETE FROM ddl")
+        conn.executemany("INSERT INTO ddl VALUES (?, ?)", read_ddl(jar, sp.find_schema_ddl(os.getcwd(), ddl)))
     conn.close()
     run_resolvers(store)
     conn = connect(store)
@@ -339,6 +344,21 @@ def parse(
                      (time.time(), run_id))
     conn.close()
     return run_id
+
+
+def read_ddl(jar: str | os.PathLike, files: Sequence[Path]) -> list[tuple[str, str]]:
+    """Tables, keys, indexes and views in DDL files, from the parser's ``ddl`` command: one
+    (path, JSON) pair per file."""
+    if not files:
+        return []
+    out = subprocess.run(["java", "-jar", str(jar), "ddl", *map(str, files)],
+                         capture_output=True, text=True, check=True).stdout
+    rows = []
+    for line in out.splitlines():
+        if line.startswith("{"):
+            uri = urllib.parse.urlparse(json.loads(line)["uri"])
+            rows.append((str(Path(urllib.parse.unquote(uri.path)).resolve()), line))
+    return rows
 
 
 def latest_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:

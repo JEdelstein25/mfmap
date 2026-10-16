@@ -46,12 +46,20 @@ class StoreTest(unittest.TestCase):
         target.write_text(text)
         return text
 
+    def fake_read_ddl(self, jar, files):
+        """The parser's ddl output for the fixtures (DDL.jsonl), for the files mfmap chose."""
+        self.ddl_files = [Path(f).relative_to(self.src).as_posix() for f in files]
+        lines = (FIXTURES / "DDL.jsonl").read_text().replace("/FIXTURE", str(self.src)).splitlines()
+        by_path = {json.loads(line)["uri"].removeprefix("file:"): line for line in lines}
+        return [(str(f), by_path[str(f)]) for f in files if str(f) in by_path]
+
     def parse(self, *copybook_dirs):
         self.parsed = []
         cwd = os.getcwd()
         os.chdir(self.src)  # the parse root, as when run from the application's repository
         self.addCleanup(os.chdir, cwd)
-        with mock.patch.object(store, "parse_one", self.fake_parse):
+        with mock.patch.object(store, "parse_one", self.fake_parse), \
+                mock.patch.object(store, "read_ddl", self.fake_read_ddl):
             return store.parse(self.store, self.jar, [self.src / "SAMPLE.cbl"],
                                copybook_dirs or [self.src / "cpy"], jobs=1)
 
@@ -102,8 +110,13 @@ class StoreTest(unittest.TestCase):
         # Every fake parse returns PROGRAM-ID SAMPLE, so SAMPCOPY.cbl copies it under another file name.
         shutil.copy(self.src / "SAMPLE.cbl", self.src / "SAMPCOPY.cbl")
 
+        cwd = os.getcwd()
+        os.chdir(self.src)
+        self.addCleanup(os.chdir, cwd)
+
         def parse(*names):
-            with mock.patch.object(store, "parse_one", self.fake_parse):
+            with mock.patch.object(store, "parse_one", self.fake_parse), \
+                    mock.patch.object(store, "read_ddl", self.fake_read_ddl):
                 store.parse(self.store, self.jar, [self.src / n for n in names], [self.src / "cpy"], jobs=1)
             conn = self.db()
             rows = {(Path(r["file"]).name, r["name"]) for r in conn.execute("SELECT file, name FROM programs")}
@@ -239,6 +252,32 @@ class StoreTest(unittest.TestCase):
         self.assertIn(("paragraph:SAMPLE.1000-READ", "business-logic", "Copies each account to the report"),
                       entities)
         self.assertIn("## Relationships", report(self.store)["parser"])
+
+    def test_ddl_tables_keys_and_views_meet_the_programs_tables(self):
+        self.parse()
+        # The JCL that runs DSNTIAD is read for its CREATE TABLE statements; programs are not.
+        self.assertEqual(self.ddl_files, ["ddl/PROCS.sql", "jcl/SAMPDDL.jcl"])
+        conn = self.db()
+        entities = {(e["entity"], e["kind"], e["note"])
+                    for e in conn.execute("SELECT * FROM entities WHERE resolver = 'ddl'")}
+        rows = {(r["kind"], r["source"], r["target"], r["note"])
+                for r in conn.execute("SELECT * FROM relationships WHERE resolver = 'ddl'")}
+        # The programs say BANK.AUDIT_LOG; the DDL says AUDIT_LOG. They are the same table.
+        self.assertIn(("db2:BANK.AUDIT_LOG", "defined", "3 columns; primary key ID; defined as AUDIT_LOG"), entities)
+        self.assertIn(("db2:BANK.CUSTOMER", "defined", "2 columns; primary key CUST_ID"), entities)
+        self.assertIn(("column:BANK.AUDIT_LOG.AGE", "column", "SMALLINT NOT NULL WITH DEFAULT"), entities)
+        self.assertIn(("references", "db2:BANK.AUDIT_LOG", "db2:BANK.CUSTOMER",
+                       "CUST_ID -> CUST_ID; ON DELETE CASCADE"), rows)
+        self.assertIn(("indexes", "index:BANK.AUDIT_CUST", "db2:BANK.AUDIT_LOG", "on CUST_ID"), rows)
+        # The programs qualify their tables with BANK, so the view keeps its schema too.
+        self.assertIn(("selects-from", "db2:BANK.CUSTOMER_AUDIT", "db2:BANK.CUSTOMER", None), rows)
+        self.assertEqual([e for e in entities if e[1] in ("no-definition", "parse-error")], [])
+        self.assertIn("- 2 tables defined in DDL; 0 used by programs with no definition; 0 DDL statements "
+                      "not parsed.", report(self.store)["parser"])
+        # And the program's own access reaches the defined table.
+        self.assertIn(("db2:BANK.AUDIT_LOG", "defined"),
+                      {(r["target"], "defined") for r in conn.execute(
+                          "SELECT target FROM relationships WHERE source = 'program:SAMPLE'")})
 
     def test_check_catches_plan_mistakes(self):
         self.parse()

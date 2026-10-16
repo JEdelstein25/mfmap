@@ -197,6 +197,13 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
 - `jcl`: which job or procedure runs which program in each step (including programs run through
   TSO batch with `RUN PROGRAM`), the datasets their DD statements name, and each program's batch
   file reads and writes matched to those datasets through its `ASSIGN` names.
+- `ddl`: Db2 tables with their columns (`column:TABLE.COLUMN`), primary keys, foreign keys
+  (`references`), indexes and views (`selects-from`), from the parser's `ddl` command on the DDL
+  files under the current folder and `--ddl` paths, and on any other text file, such as a DSNTIAD
+  job, with a `CREATE TABLE`, `INDEX` or `VIEW` at the start of a line. Tables are named as the
+  programs name them, qualified or not. A table the programs use that no DDL defines is a
+  `no-definition` entity, and a statement the grammar rejects is a `parse-error` entity; the Parser
+  tab lists both.
 
 To resolve something else, such as API definitions or a scheduler's job order, add a module to
 `mfmap/resolvers/` with a `NAME` and a `resolve(ctx)` function that yields `Entity` and

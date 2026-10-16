@@ -201,6 +201,17 @@ def relationship_section(conn) -> list[str]:
                + f". {open_:,} have a target known only at run time.")
     by = collections.Counter(r["resolver"] for r in rows) + collections.Counter(e["resolver"] for e in entities)
     out.append("- Recorded by: " + ", ".join(f"{name} {n:,}" for name, n in sorted(by.items())) + ".")
+    tables = [e for e in entities if e["resolver"] == "ddl" and e["kind"] == "defined"
+              and e["entity"].startswith("db2:")]
+    gaps = conn.execute("SELECT entity, kind, note, path, line FROM entities WHERE resolver = 'ddl' AND kind IN "
+                        "('no-definition', 'parse-error') ORDER BY kind, entity, line").fetchall()
+    if tables or gaps:
+        out.append("\n### Db2 Definitions\n")
+        out.append(f"- {len({t['entity'] for t in tables}):,} tables defined in DDL; "
+                   f"{sum(1 for g in gaps if g['kind'] == 'no-definition'):,} used by programs with no definition; "
+                   f"{sum(1 for g in gaps if g['kind'] == 'parse-error'):,} DDL statements not parsed.")
+        out += [f"- **{g['entity'].split(':', 1)[1]}**: no CREATE TABLE or VIEW." if g["kind"] == "no-definition"
+                else f"- `{os.path.basename(g['path'] or '')}:{g['line']}` not parsed: {g['note']}" for g in gaps]
     names = conn.execute("SELECT entity, kind, note, path FROM entities WHERE kind IN "
                          "('duplicate-program-id', 'program-id-differs-from-file') ORDER BY kind, entity").fetchall()
     if names:
