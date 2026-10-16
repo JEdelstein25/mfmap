@@ -120,6 +120,21 @@ class ModelTest(unittest.TestCase):
         self.assertEqual([(c.kind, c.statement.location.line) for c in cg.commit_points(self.program)],
                          [("COMMIT", 96), ("SYNCPOINT ROLLBACK", 97)])
 
+    def test_dli_calls(self):
+        """CALL 'CBLTDLI' is data access and commit points, not a call to another program."""
+        program = cg.load(FIXTURES / "DLICALL.json", path_map={"/FIXTURE": str(FIXTURES)}).programs[0]
+        self.assertEqual(list(cg.call_edges(program)), [])
+        self.assertEqual([(a.statement.location.line, a.store, a.resource, a.mode, a.resolved)
+                          for a in cg.data_access(program)], [
+            (29, "ims-message", "IOPCB", "read", "inferred"),  # no SSA ever qualifies IOPCB
+            (30, "ims", "CUSTROOT", "read", "value"),  # the SSA's first 8 bytes
+            (32, "ims", "ORDERSEG", "read", "value"),  # the last SSA, after an argument count
+            (35, "ims", "CUSTROOT", "write", "inferred"),  # REPL: the segment held into CUST-REC
+            (37, "ims", "ORDERSEG", "write", "inferred"),  # DLET, its function MOVEd in
+            (38, "ims-message", "IOPCB", "write", "inferred"),
+        ])
+        self.assertEqual([(c.kind, c.statement.location.line) for c in cg.commit_points(program)], [("CHKP", 39)])
+
     def test_procedures_from_ddl(self):
         from mfmap import procedures as sp
         defined = {d.name: d for d in sp.procedures(sp.find_ddl(FIXTURES / "ddl"))}

@@ -40,6 +40,9 @@ CICS_QUEUE_WRITES = {"WRITEQ", "DELETEQ"}
 CICS_PROGRAM_TRANSFERS = {"LINK", "XCTL", "LOAD"}
 DLI_READS = {"GU", "GHU", "GN", "GHN", "GNP", "GHNP"}
 DLI_WRITES = {"ISRT", "REPL", "DLET"}
+DLI_HOLDS = {"GHU", "GHN", "GHNP"}
+DLI_COMMITS = {"CHKP", "SYMCHKP", "SYNC", "ROLB", "ROLL"}
+DLI_INTERFACES = {"CBLTDLI", "AIBTDLI", "CEETDLI"}  # CALL interfaces to IMS DL/I, not programs
 
 
 @dataclass(frozen=True)
@@ -637,6 +640,55 @@ class Call(Statement):
         return match.group(1) if match else ""
 
 
+    @property
+    def arguments(self) -> list[Node]:
+        """The data names in USING, in order (for a dynamic CALL, after the program's)."""
+        refs = [c for c in self.node.children if c.kind == "QualifiedReferenceNode"]
+        return refs[1:] if self.dynamic else refs
+
+
+class DliCall:
+    """A CALL 'CBLTDLI' (or AIBTDLI, CEETDLI) USING [count,] function, PCB, I/O area, SSAs.
+
+    ``functions`` are the codes the function argument can hold: its VALUE (``how`` "value"), or
+    else what the program MOVEs into it (``how`` "unresolved"). ``segment`` is named by the last
+    SSA: the first 8 bytes of its VALUE, or of its first subordinate item's VALUE."""
+
+    def __init__(self, call: "Call"):
+        self.call = call
+        program = call.program
+        refs = call.arguments
+        items = [program.item((a.refs("variableDefinitionNode") or [None])[0]) if a.refs("variableDefinitionNode")
+                 else None for a in refs]
+        names = [i.name if i else a.source.strip() for i, a in zip(items, refs)]
+        if items and items[0] is not None and items[0].pic and re.fullmatch(r"S?9[\d()]*", items[0].pic.upper()) \
+                and items[0].value and literal(items[0].value) is None:
+            items, names = items[1:], names[1:]  # an optional argument count comes first
+        self.expression = " ".join(names)
+        function, self.how = program.resolve(names[0]) if names else (None, "unresolved")
+        self.functions = (function.upper(),) if function else \
+            tuple(dict.fromkeys(v.strip().upper() for v in program.moved_values(names[0]))) if names else ()
+        self.pcb = names[1].upper() if len(names) > 1 else None
+        self.area = names[2].upper() if len(names) > 2 else None
+        self.ssas = names[3:]
+        self.segment = self._segment(items[-1]) if len(items) > 3 else None
+
+    @staticmethod
+    def _segment(item: Optional["DataItem"]) -> Optional[str]:
+        while item is not None:
+            value = literal(item.value)
+            if value:
+                return value[:8].strip() or None
+            item = item.children[0] if item.children else None
+        return None
+
+
+def dli_calls(program: "Program") -> list[DliCall]:
+    """The program's DL/I calls: CALL 'CBLTDLI', or a dynamic CALL whose item holds that name."""
+    return [DliCall(s) for s in program.calls
+            if (s.target or program.resolve(s.expression)[0] or "").upper() in DLI_INTERFACES]
+
+
 class Cics(Statement):
     """EXEC CICS. ``command`` is as reported by the parser (for example ``SEND MAP``);
     ``verb`` is its first word."""
@@ -805,10 +857,10 @@ class Access:
 
     program: Program
     statement: Statement
-    store: str  # db2, vsam, file, ims or queue
+    store: str  # db2, vsam, file, ims, ims-message or queue
     resource: Optional[str]
     mode: str  # read, write, read-write, or unknown for dynamic SQL
-    resolved: str  # literal, value, declared or unresolved
+    resolved: str  # literal, value, declared, inferred or unresolved
     expression: str
     candidates: tuple = ()  # for dynamic SQL: SQL text the program MOVEs into the host variable
 
@@ -818,7 +870,10 @@ class Access:
 
 
 def call_edges(program: Program) -> Iterator[CallEdge]:
+    dli = {c.call.node.id for c in dli_calls(program)}
     for s in program.calls:
+        if s.node.id in dli:
+            continue  # a DL/I call is data access or a commit point, not a call to another program
         target, how = (s.target, "literal") if s.target else program.resolve(s.expression)
         moved = tuple(program.moved_values(s.expression)) if target is None else ()
         yield CallEdge(program, s, "CALL", target, how, s.expression, moved)
@@ -868,6 +923,7 @@ def data_access(program: Program) -> Iterator[Access]:
             for segment in s.segments or [None]:
                 yield Access(program, s, "ims", segment, mode, "literal" if segment else "unresolved",
                              segment or "")
+    yield from dli_access(program)
     for s in program.file_io:
         f = s.file
         if s.verb == "OPEN":
@@ -879,13 +935,52 @@ def data_access(program: Program) -> Iterator[Access]:
                      f.name if f else "")
 
 
+def dli_access(program: Program) -> Iterator[Access]:
+    """Reads and writes by DL/I calls. With an SSA, the access is of the segment the last SSA
+    names. Without one, the segment is "inferred": REPL and DLET act on the segment a GHU, GHN or
+    GHNP on the same PCB held, preferring one read into the same I/O area; other calls take the
+    segment of an SSA call on the same PCB and I/O area. A call on a PCB that no call qualifies
+    with an SSA is taken as a message call on the I/O or an alternate PCB (store ``ims-message``,
+    resource the PCB); a GSAM PCB looks the same."""
+    calls = dli_calls(program)
+    qualified = {c.pcb for c in calls if c.ssas}
+    by_area = {}
+    for c in calls:
+        if c.segment:
+            by_area.setdefault((c.pcb, c.area), c.segment)
+    for c in calls:
+        modes = {"read" if f in DLI_READS else "write" for f in c.functions if f in DLI_READS | DLI_WRITES}
+        if not c.functions:
+            modes = {"unknown"}  # the function code is set at run time
+        candidates = c.functions if c.how != "value" else ()
+        for mode in sorted(modes):
+            if c.ssas:
+                yield Access(program, c.call, "ims", c.segment, mode, "value" if c.segment else "unresolved",
+                             c.expression, candidates)
+                continue
+            holds = [h for h in calls if h.pcb == c.pcb and h.segment and set(h.functions) & DLI_HOLDS]
+            held = tuple(dict.fromkeys(h.segment for h in [h for h in holds if h.area == c.area] or holds))
+            if set(c.functions) <= {"REPL", "DLET"} and held:
+                yield Access(program, c.call, "ims", held[0] if len(held) == 1 else None, mode,
+                             "inferred" if len(held) == 1 else "unresolved", c.expression,
+                             held if len(held) > 1 else ())
+            elif (c.pcb, c.area) in by_area:
+                yield Access(program, c.call, "ims", by_area[(c.pcb, c.area)], mode, "inferred", c.expression,
+                             candidates)
+            elif c.pcb not in qualified:
+                yield Access(program, c.call, "ims-message", c.pcb, mode, "inferred", c.expression, candidates)
+            else:
+                yield Access(program, c.call, "ims", None, mode, "unresolved", c.expression, candidates)
+
+
 @dataclass(frozen=True)
 class CommitPoint:
-    """Where a unit of work ends: EXEC SQL COMMIT or ROLLBACK, or EXEC CICS SYNCPOINT."""
+    """Where a unit of work ends: EXEC SQL COMMIT or ROLLBACK, EXEC CICS SYNCPOINT, or an IMS
+    checkpoint or rollback (CHKP, SYMCHKP, SYNC, ROLB or ROLL, by EXEC DLI or CALL 'CBLTDLI')."""
 
     program: Program
     statement: Statement
-    kind: str  # COMMIT, ROLLBACK, SYNCPOINT or SYNCPOINT ROLLBACK
+    kind: str  # COMMIT, ROLLBACK, SYNCPOINT, SYNCPOINT ROLLBACK, or the DL/I function
 
 
 def commit_points(program: Program) -> Iterator[CommitPoint]:
@@ -896,6 +991,13 @@ def commit_points(program: Program) -> Iterator[CommitPoint]:
         if s.verb == "SYNCPOINT":
             yield CommitPoint(program, s, "SYNCPOINT ROLLBACK" if s.has("ROLLBACK") or "ROLLBACK" in s.command
                               else "SYNCPOINT")
+    for s in program.dli:
+        if s.verb in DLI_COMMITS:
+            yield CommitPoint(program, s, s.verb)
+    for c in dli_calls(program):
+        for f in c.functions:
+            if f in DLI_COMMITS:
+                yield CommitPoint(program, c.call, f)
 
 
 class Project:

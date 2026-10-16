@@ -1,0 +1,5 @@
+//SAMPIMS  JOB 'IMS batch sample',CLASS=A
+//* Runs SAMPLE as an IMS batch (DLI) program through the region controller
+//STEP01   EXEC PGM=DFSRRC00,
+//             PARM='DLI,SAMPLE,SAMPPSB,,,,,,,,,,,N'
+//ACCTDD   DD DSN=PROD.SAMPLE.IMSACCT,DISP=SHR

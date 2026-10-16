@@ -164,7 +164,8 @@ for s in p.statements:
 
 project.calls()          # CALL, LINK, XCTL, LOAD and SQL CALL edges
 project.data_access()    # store, resource, read or write, statement
-cg.commit_points(p)      # EXEC SQL COMMIT and ROLLBACK, EXEC CICS SYNCPOINT
+cg.commit_points(p)      # EXEC SQL COMMIT and ROLLBACK, EXEC CICS SYNCPOINT, IMS CHKP and ROLB
+cg.dli_calls(p)          # CALL 'CBLTDLI': functions, pcb, area, ssas, segment
 ```
 
 ### Stored procedures
@@ -203,7 +204,8 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
 - `cics`: transactions and the programs they start, from CSD `DEFINE` statements, and screens from
   BMS map source.
 - `jcl`: which job or procedure runs which program in each step (including programs run through
-  TSO batch with `RUN PROGRAM`), the datasets their DD statements name, and each program's batch
+  TSO batch with `RUN PROGRAM` and IMS programs run through `DFSRRC00` with
+  `PARM='DLI|DBB|BMP,program,psb'`), the datasets their DD statements name, and each program's batch
   file reads and writes matched to those datasets through its `ASSIGN` names.
 - `ddl`: Db2 tables with their columns (`column:TABLE.COLUMN`), primary keys, foreign keys
   (`references`), indexes and views (`selects-from`), from the parser's `ddl` command on the DDL
@@ -276,7 +278,19 @@ on are built.
 `unresolved`, since the tables are only known at run time. `expression` names the host variable
 that holds the SQL text and `candidates` lists the literals the program MOVEs into it. `EXECUTE` of
 a prepared statement adds no second row. Commit points (`COMMIT`, `ROLLBACK`, `SYNCPOINT` and
-`SYNCPOINT ROLLBACK`) mark where units of work end.
+`SYNCPOINT ROLLBACK`, and the IMS `CHKP`, `SYMCHKP`, `SYNC`, `ROLB` and `ROLL`, by `EXEC DLI` or
+`CALL 'CBLTDLI'`) mark where units of work end.
+
+### IMS calls
+
+`CALL 'CBLTDLI'` (or `AIBTDLI`, `CEETDLI`) is IMS access, not a call to another program. The
+function code comes from the first argument's `VALUE`, or from what the program MOVEs into it, after
+an optional argument count. A call with SSAs reads or writes the segment the last SSA names (the
+first 8 bytes of its `VALUE`, `resolved` `value`). A call without SSAs is `inferred`: `REPL` and
+`DLET` act on the segment a `GHU`, `GHN` or `GHNP` on the same PCB held, other calls take the
+segment an SSA call read into the same I/O area on the same PCB, and a call on a PCB that no call
+ever qualifies is store `ims-message` with the PCB as its resource (the I/O or an alternate PCB, or a
+GSAM PCB). Check `inferred` rows against the PSB.
 
 ### How names are resolved
 

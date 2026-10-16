@@ -33,7 +33,7 @@ class StoreTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp)
         self.src = self.tmp / "src"
-        shutil.copytree(FIXTURES, self.src)
+        shutil.copytree(FIXTURES, self.src, ignore=shutil.ignore_patterns("DLICALL.*"))  # one program, SAMPLE
         self.jar = self.tmp / "server.jar"
         self.jar.write_bytes(b"jar")
         self.store = self.tmp / ".mfmap"
@@ -240,6 +240,9 @@ class StoreTest(unittest.TestCase):
             # The program runs through TSO batch; its SYSTSIN comes after the DDs it uses.
             ("runs", "job:SAMPJOB", "program:SAMPLE"),
             ("runs", "job:SAMPJOB", "proc:SAMPPROC"),
+            # An IMS batch step names its program in DFSRRC00's PARM.
+            ("runs", "job:SAMPIMS", "program:SAMPLE"),
+            ("read", "program:SAMPLE", "dataset:PROD.SAMPLE.IMSACCT"),
             # SELECT ... ASSIGN names matched to the DD statements of the step that runs the program.
             ("read", "program:SAMPLE", "dataset:PROD.SAMPLE.ACCOUNTS"),
             ("write", "program:SAMPLE", "dataset:PROD.SAMPLE.REPORT(+1)"),
@@ -250,6 +253,7 @@ class StoreTest(unittest.TestCase):
         ]:
             self.assertIn(expected, rows)
         self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)
+        self.assertNotIn(("runs", "job:SAMPIMS", "program:DFSRRC00"), rows)
         # Control flow: where the program starts, which paragraphs fall into the next, and the
         # paragraph that makes each call.
         for expected in [

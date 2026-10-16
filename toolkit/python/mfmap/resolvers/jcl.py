@@ -9,7 +9,8 @@
 which dataset each DD statement names. A program's batch file access (its SELECT ... ASSIGN name)
 is matched to the DD statement with that name in the steps that run it, giving reads and writes of
 datasets. Programs run through TSO batch (IKJEFT01 with ``RUN PROGRAM(...)`` in SYSTSIN), as Db2
-batch programs are, count as run by that step. Symbolic parameters (``&NAME``) are kept as written.
+batch programs are, count as run by that step, as do IMS programs run through the region controller
+(DFSRRC00 with ``PARM='DLI|DBB|BMP,program,psb'``). Symbolic parameters (``&NAME``) are kept as written.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ PROC = re.compile(r"\bPROC=([\w#@$&]+)", re.I)
 DSN = re.compile(r"\bDSN(?:AME)?=([^,\s)(]+(?:\([^)]*\))?)", re.I)
 RUN_PROGRAM = re.compile(r"\bRUN\s+PROGRAM\s*\(\s*([\w#@$]+)\s*\)", re.I)
 TSO_BATCH = {"IKJEFT01", "IKJEFT1A", "IKJEFT1B"}
+IMS_REGION = re.compile(r"\bPARM=\(?'?\s*(DLI|DBB|BMP)\s*,\s*([\w#@$]+)\s*(?:,\s*([\w#@$]+))?", re.I)
 
 
 def operands(text: str) -> str:
@@ -92,6 +94,10 @@ def steps(path, text) -> Iterator[Fact | dict]:
             step = {"owner": owner, "name": s["name"], "line": s["line"], "via": None, "dds": [],
                     "program": pgm.group(1).upper() if pgm else None,
                     "proc": proc_name.upper() if proc_name and not pgm else None}
+            region = IMS_REGION.search(s["operands"]) if step["program"] == "DFSRRC00" else None
+            if region:
+                psb = f", PSB {region.group(3).upper()}" if region.group(3) else ""
+                step["via"], step["program"] = f"DFSRRC00 {region.group(1).upper()}{psb}", region.group(2).upper()
         elif s["op"] == "DD" and step:
             dd = s["name"].upper()
             if step["program"] in TSO_BATCH and dd == "SYSTSIN":
