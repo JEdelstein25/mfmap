@@ -201,6 +201,12 @@ def relationship_section(conn) -> list[str]:
                + f". {open_:,} have a target known only at run time.")
     by = collections.Counter(r["resolver"] for r in rows) + collections.Counter(e["resolver"] for e in entities)
     out.append("- Recorded by: " + ", ".join(f"{name} {n:,}" for name, n in sorted(by.items())) + ".")
+    names = conn.execute("SELECT entity, kind, note, path FROM entities WHERE kind IN "
+                         "('duplicate-program-id', 'program-id-differs-from-file') ORDER BY kind, entity").fetchall()
+    if names:
+        out.append("\n### Program Names\n")
+        out += [f"- **{e['entity'].split(':', 1)[1]}** (`{os.path.basename(e['path'] or '')}`): {e['note']}."
+                for e in names]
     return out
 
 

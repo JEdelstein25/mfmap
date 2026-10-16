@@ -98,6 +98,35 @@ class StoreTest(unittest.TestCase):
         self.assertIn("relationships", facts)
         self.assertRegex(run("crosscheck", str(self.store), "-cf", str(self.src / "cpy")), r"(?m)^CALL\s+\d+\s+\d+$")
 
+    def test_programs_sharing_a_program_id_are_both_kept(self):
+        # Every fake parse returns PROGRAM-ID SAMPLE, so SAMPCOPY.cbl copies it under another file name.
+        shutil.copy(self.src / "SAMPLE.cbl", self.src / "SAMPCOPY.cbl")
+
+        def parse(*names):
+            with mock.patch.object(store, "parse_one", self.fake_parse):
+                store.parse(self.store, self.jar, [self.src / n for n in names], [self.src / "cpy"], jobs=1)
+            conn = self.db()
+            rows = {(Path(r["file"]).name, r["name"]) for r in conn.execute("SELECT file, name FROM programs")}
+            callers = {(Path(r["file"]).name, r["program"]) for r in conn.execute("SELECT file, program FROM calls")}
+            notes = {(r["entity"], r["kind"]) for r in conn.execute("SELECT entity, kind FROM entities")}
+            return rows, callers, notes, store.load_project(self.store).programs
+
+        rows, callers, notes, programs = parse("SAMPLE.cbl", "SAMPCOPY.cbl")
+        self.assertEqual(rows, {("SAMPLE.cbl", "SAMPLE"), ("SAMPCOPY.cbl", "SAMPCOPY")})
+        self.assertEqual(callers, rows)
+        self.assertEqual(sorted(programs), ["SAMPCOPY", "SAMPLE"])
+        self.assertIn(("program:SAMPCOPY", "duplicate-program-id"), notes)
+        self.assertIn("**SAMPCOPY** (`SAMPCOPY.cbl`): PROGRAM-ID SAMPLE is also in another file",
+                      report(self.store)["parser"])
+
+        # Alone, the copy takes its PROGRAM-ID again, and its file name is flagged instead.
+        rows, callers, notes, programs = parse("SAMPCOPY.cbl")
+        self.assertIn(("SAMPCOPY.cbl", "SAMPLE"), rows)
+        self.assertIn(("SAMPCOPY.cbl", "SAMPLE"), callers)
+        self.assertEqual(sorted(programs), ["SAMPLE"])
+        self.assertIn(("program:SAMPLE", "program-id-differs-from-file"), notes)
+        self.assertNotIn(("program:SAMPCOPY", "duplicate-program-id"), notes)
+
     def test_finds_named_files_and_members_without_extensions(self):
         members = self.tmp / "members"
         (members / ".old").mkdir(parents=True)

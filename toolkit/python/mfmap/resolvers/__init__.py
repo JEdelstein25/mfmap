@@ -121,6 +121,8 @@ def run(store: str | os.PathLike, names: Optional[Iterable[str]] = None) -> dict
     try:
         last = conn.execute("SELECT root FROM runs ORDER BY id DESC LIMIT 1").fetchone()
         ctx = Context(store, Path(last["root"] if last else store.parent), conn)
+        from ..store import apply_program_names
+        apply_program_names(conn, ctx.project)
         resolvers = discover()
         counts = {}
         for name in names or resolvers:

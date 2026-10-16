@@ -12,9 +12,11 @@ started or returned to."""
 from __future__ import annotations
 
 import json
+import re
 from typing import Iterator
 
-from . import Context, Fact, Relationship
+from . import Context, Entity, Fact, Relationship
+from ..model import member_name, source_path
 
 NAME = "programs"
 CALL_KINDS = {"CALL": "calls", "LINK": "links", "XCTL": "transfers", "LOAD": "loads",
@@ -43,6 +45,18 @@ def resolve(ctx: Context) -> Iterator[Fact]:
         target = f"{a['store']}:{a['resource']}" if a["resource"] else None
         yield Relationship(a["mode"], f"program:{a['program']}", target, a["resolved"], a["expression"],
                            a["verb"], a["path"], a["line"])
+
+    for p in ctx.project.renamed:
+        yield Entity(f"program:{p.name}", "duplicate-program-id",
+                     f"PROGRAM-ID {p.program_id} is also in another file, so it is named after its file",
+                     path=source_path(p.file))
+    for f in ctx.project.files:
+        stem = member_name(source_path(f))
+        if f.programs and f.programs[0] not in ctx.project.renamed and re.fullmatch(r"[A-Z#@$][A-Z0-9#@$]{0,7}", stem) \
+                and stem != f.programs[0].name:
+            yield Entity(f"program:{f.programs[0].name}", "program-id-differs-from-file",
+                         f"its file is named {stem}; a CALL, LINK or XCTL of {stem} may mean this program",
+                         path=source_path(f))
 
     for p in ctx.project.programs.values():
         def where(s):

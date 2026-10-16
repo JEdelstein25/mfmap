@@ -355,7 +355,27 @@ def load_project(store: str | os.PathLike, **kwargs) -> Project:
     """The project as of the store's latest run."""
     conn = connect(store)
     try:
-        graphs = [row["graph"] for row in latest_files(conn) if row["graph"]]
+        rows = [(row["path"], row["graph"]) for row in latest_files(conn) if row["graph"]]
     finally:
         conn.close()
-    return Project(SourceFile.load(g, **kwargs) for g in graphs if Path(g).is_file())
+    files = []
+    for path, g in rows:
+        if Path(g).is_file():
+            files.append(SourceFile.load(g, **kwargs))
+            files[-1].source = path
+    return Project(files)
+
+
+def apply_program_names(conn: sqlite3.Connection, project: Project) -> None:
+    """Give the per-file rows the names ``project`` uses. Rows are written with the PROGRAM-ID, so
+    a program Project named after its file is renamed here, and named back when it no longer needs
+    to be. Only files with one program are renamed; a nested program keeps its PROGRAM-ID."""
+    with conn:
+        for f in project.files:
+            if len(f.programs) != 1:
+                continue
+            name = f.programs[0].name
+            conn.execute("UPDATE programs SET name = ? WHERE file = ? AND name != ?", (name, f.source, name))
+            for table in ("calls", "access", "file_controls", "commits"):
+                conn.execute(f"UPDATE {table} SET program = ? WHERE file = ? AND program != ?",
+                             (name, f.source, name))

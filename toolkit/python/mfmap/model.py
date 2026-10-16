@@ -233,6 +233,8 @@ class Program:
         self.node = node
         self.file = node.graph
         self.name: str = node.data.get("programName", "")
+        # The PROGRAM-ID. ``name`` differs from it only when Project names a duplicate after its file.
+        self.program_id: str = self.name
 
     def __repr__(self) -> str:
         return f"<Program {self.name}>"
@@ -847,10 +849,26 @@ class Project:
 
     def __init__(self, files: Iterable[SourceFile]):
         self.files = list(files)
-        self.programs: dict[str, Program] = {}
+        # Programs named after their file because another file has the same PROGRAM-ID.
+        self.renamed: list[Program] = []
+        found: dict[str, list[tuple[str, int, Program]]] = {}
         for f in self.files:
-            for p in f.programs:
-                self.programs.setdefault(p.name, p)
+            for i, p in enumerate(f.programs):
+                found.setdefault(p.name, []).append((source_path(f), i, p))
+        taken = set(found)
+        for name, copies in found.items():
+            # The program in the file named after it keeps the name; each other copy is named after
+            # its file, as the build names the load module after the member.
+            copies.sort(key=lambda c: (member_name(c[0]) != name, c[0]))
+            for path, i, p in copies[1:]:
+                stem = member_name(path)
+                new = stem if i == 0 and stem not in taken else f"{name}@{stem or Path(path).parent.name}"
+                while new in taken:
+                    new += "@"
+                taken.add(new)
+                p.name = new
+                self.renamed.append(p)
+        self.programs: dict[str, Program] = {p.name: p for f in self.files for p in f.programs}
 
     @classmethod
     def load(cls, directory: str | os.PathLike, **kwargs) -> "Project":
@@ -875,6 +893,16 @@ class Project:
 
     def data_access(self) -> list[Access]:
         return [a for p in self.programs.values() for a in data_access(p)]
+
+
+def source_path(f: SourceFile) -> str:
+    """The source file's path as the store records it, else as the graph names it."""
+    return getattr(f, "source", None) or f.path or ""
+
+
+def member_name(path: str) -> str:
+    """The member a source file would be built as: its name without the extension, in capitals."""
+    return Path(path).stem.upper()
 
 
 def load(path: str | os.PathLike, **kwargs) -> SourceFile:

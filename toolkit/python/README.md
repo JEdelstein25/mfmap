@@ -27,6 +27,11 @@ export MFMAP_JAR=$PWD/server/engine/target/server.jar
 mfmap parse src -cf src/copybooks -cf src/maps -ce cpy -ce CPY -j 6
 ```
 
+A program is named by its PROGRAM-ID. When two files have the same PROGRAM-ID, as when a program
+was copied and the copy never renamed, the one in the file named after it keeps the name and each
+other copy is named after its file, as the build names its load module. The Parser tab lists these
+under Program Names, along with files whose PROGRAM-ID differs from the file name.
+
 Files named on the command line are parsed whatever their extension. In folders, `-se` picks
 other program extensions, and `-se ''` picks members with no extension, as in a PDS copied off
 the mainframe. Hidden folders such as `.git` are skipped.
