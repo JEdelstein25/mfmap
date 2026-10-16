@@ -250,6 +250,26 @@ class StoreTest(unittest.TestCase):
         ]:
             self.assertIn(expected, rows)
         self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)
+        # Control flow: where the program starts, which paragraphs fall into the next, and the
+        # paragraph that makes each call.
+        for expected in [
+            ("enters", "program:SAMPLE", "paragraph:SAMPLE.0000-MAIN"),
+            ("falls-through", "paragraph:SAMPLE.1000-READ", "paragraph:SAMPLE.1000-EXIT"),
+            ("falls-through", "paragraph:SAMPLE.1000-EXIT", "paragraph:SAMPLE.2000-DB2"),
+            # A GO TO inside an IF does not end the paragraph, and fall-through crosses sections.
+            ("falls-through", "paragraph:SAMPLE.8010-REGISTER", "paragraph:SAMPLE.8020-WORK"),
+            ("falls-through", "paragraph:SAMPLE.8020-WORK", "paragraph:SAMPLE.8900-RECOVER"),
+            ("contains", "paragraph:SAMPLE.8000-GUARDED", "paragraph:SAMPLE.8010-REGISTER"),
+            ("contains", "program:SAMPLE", "paragraph:SAMPLE.8020-WORK"),
+            ("handles", "paragraph:SAMPLE.8010-REGISTER", "paragraph:SAMPLE.8900-RECOVER"),
+            ("invokes", "paragraph:SAMPLE.0000-MAIN", "program:SAMPUTIL"),
+            ("invokes", "paragraph:SAMPLE.3000-CICS", "program:SAMPLNK"),
+        ]:
+            self.assertIn(expected, rows)
+        # GOBACK and EXEC CICS RETURN end their paragraphs; nothing falls out of them.
+        self.assertNotIn(("falls-through", "paragraph:SAMPLE.0000-MAIN", "paragraph:SAMPLE.1000-READ"), rows)
+        self.assertNotIn(("falls-through", "paragraph:SAMPLE.6000-SCREEN", "paragraph:SAMPLE.8010-REGISTER"), rows)
+        self.assertNotIn(("contains", "paragraph:SAMPLE.8000-GUARDED", "paragraph:SAMPLE.8900-RECOVER"), rows)
         entities = {(e["entity"], e["kind"], e["note"]) for e in conn.execute("SELECT * FROM entities")}
         self.assertIn(("transaction:SAMP", "defined", "SAMPLE ACCOUNT INQUIRY"), entities)
         self.assertIn(("screen:SAMPSET.SAMPMAP", "defined", None), entities)
@@ -301,7 +321,7 @@ class StoreTest(unittest.TestCase):
         # Schema: required fields, typed endpoints, no extra fields.
         self.assertIn("units[0]: missing wave", problems({"version": 1, "units": [
             {k: v for k, v in unit.items() if k != "wave"}]}))
-        self.assertIn('units[0].programs[0]: "SAMPLE" does not match ^program:.+$',
+        self.assertIn('units[0].programs[0]: "SAMPLE" does not match ^(program:.+|paragraph:[^.]+\\..+)$',
                       problems({"version": 1, "units": [{**unit, "programs": ["SAMPLE"]}]}))
         self.assertIn("units[0]: unknown field dependsOn",
                       problems({"version": 1, "units": [{**unit, "dependsOn": ["U0"]}]}))
@@ -320,6 +340,27 @@ class StoreTest(unittest.TestCase):
             {"program": "program:SAMPLE", "reason": "Replaced by the platform's scheduler"}]}), [])
         self.assertIn("program:SAMPLE is in more than one unit: U1, U2", problems({"version": 1, "units": [
             unit, {**unit, "id": "U2"}]}))
+        # A program split by paragraph is covered when every paragraph is in exactly one unit; the unit
+        # that also lists the program owns the code before its first paragraph.
+        conn = store.connect(self.store)
+        paragraphs = [r["target"] for r in conn.execute(
+            "SELECT target FROM relationships WHERE kind = 'contains' AND source = 'program:SAMPLE' ORDER BY line")]
+        conn.close()
+        self.assertEqual(paragraphs[:2], ["paragraph:SAMPLE.0000-MAIN", "paragraph:SAMPLE.1000-READ"])
+        main = {**unit, "programs": ["program:SAMPLE", paragraphs[0]]}
+        rest = {"id": "U2", "name": "Reading", "wave": 1, "programs": paragraphs[1:]}
+        self.assertEqual(problems({"version": 1, "units": [main, rest]}), [])
+        errors = problems({"version": 1, "units": [main, {**rest, "programs": paragraphs[2:]}]})
+        self.assertIn(f"program:SAMPLE is split by paragraph, but 1 of its {len(paragraphs)} paragraphs are in "
+                      "no unit: 1000-READ", errors)
+        self.assertIn("paragraph:SAMPLE.0000-MAIN is in more than one unit: U1, U2", problems(
+            {"version": 1, "units": [main, {**rest, "programs": paragraphs}]}))
+        self.assertIn("unit U2: paragraph:SAMPLE.9999-NONE is not in the map; check the name, or record it with "
+                      "mfmap record if it is real", problems(
+            {"version": 1, "units": [main, {**rest, "programs": [*paragraphs[1:], "paragraph:SAMPLE.9999-NONE"]}]}))
+        path.write_text(json.dumps({"version": 1, "units": [{**main, "programs": paragraphs[:1]}, rest]}))
+        self.assertIn("program:SAMPLE is split by paragraph, but no unit lists program:SAMPLE to own the code "
+                      "before its first paragraph", plan.check(path).warnings)
         # Endpoints must be in the map, but anything recorded with mfmap record counts.
         bad = {**unit, "reads": ["db2:BANK.CUSTOMR"]}
         self.assertIn("unit U1: db2:BANK.CUSTOMR is not in the map; check the name, or record it with "

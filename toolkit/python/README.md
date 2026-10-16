@@ -190,8 +190,16 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
 `screen:ACCTSET.ACCTMAP`, `job:NIGHTLY`, `dataset:PROD.ACCOUNTS` or
 `paragraph:ACCTUPD.2000-PROCESS`.
 
-- `programs`: copybooks each program includes, calls between programs, data access, PERFORM and GO TO between paragraphs, CICS
-  screens sent and received, and transactions started or returned to.
+- `programs`: copybooks each program includes, with the line of each COPY; calls between
+  programs, and `invokes` from the paragraph that makes a call to the program it calls; data
+  access; PERFORM and GO TO between paragraphs; `contains` from each program to its paragraphs and
+  from each section to its paragraphs; `enters` from a program to the paragraph control reaches
+  first; `falls-through` from a paragraph to the next when it does not end in an unconditional GO
+  TO, GOBACK, STOP RUN or EXIT PROGRAM (how PERFORM A THRU B reaches the paragraphs between A and
+  B); `handles` to the paragraph an EXEC CICS HANDLE ABEND or HANDLE CONDITION names; CICS screens
+  sent and received; and transactions started or returned to. Follow `enters`, `performs`,
+  `goes-to`, `falls-through` and `invokes` to trace control from a program into the programs it
+  calls.
 - `cics`: transactions and the programs they start, from CSD `DEFINE` statements, and screens from
   BMS map source.
 - `jcl`: which job or procedure runs which program in each step (including programs run through
@@ -250,7 +258,10 @@ Endpoints use the same `type:name` IDs as the store, and a unit has only these f
 else about a unit goes in `units/<unit ID>.md`. `mfmap check` validates the file against the schema
 and checks what a schema cannot: unit IDs are unique, a unit depends only on units in earlier
 waves, every parsed program is in exactly one unit or excluded with a reason, and every endpoint is
-in the map. It exits with status 1 when there are problems, and the Backlog tab lists them.
+in the map. A program too large for one unit can be split: list each of its paragraphs as
+`paragraph:PROGRAM.NAME` in exactly one unit, and `program:PROGRAM` in the unit that owns the code
+before its first paragraph. The program then counts as covered once every paragraph it `contains`
+is in a unit. It exits with status 1 when there are problems, and the Backlog tab lists them.
 
 While the units are built, `status` records how far each has got: `todo` (the default),
 `building`, `built` (merged, and its acceptance checks pass) or `verified` (its rules checked

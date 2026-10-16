@@ -10,8 +10,8 @@
 The file must follow ``schema/migration-v1.schema.json``. ``validate`` checks it against that
 schema with a small validator for the keywords the schema uses, so the toolkit needs nothing beyond
 Python. ``check`` also checks what a schema cannot: unit IDs are unique, every dependency is on a
-unit in an earlier wave, every program is in exactly one unit or excluded, and every endpoint is
-one the store knows. It warns when a unit has started before the units it depends on are built.
+unit in an earlier wave, every program is in exactly one unit or excluded (or, split by paragraph,
+every one of its paragraphs is in exactly one unit), and every endpoint is one the store knows. It warns when a unit has started before the units it depends on are built.
 """
 
 from __future__ import annotations
@@ -143,23 +143,43 @@ def check(path: Path, conn=None) -> Result:
             if iface.get("with") and iface["with"] not in waves:
                 result.errors.append(f"unit {u['id']}: interface {iface['name']} is with {iface['with']}, which is not a unit")
 
+    # A program is in one unit, or split: each of its paragraphs in one unit, and program:NAME in at
+    # most one of them, which owns the code before its first paragraph.
     owners = collections.defaultdict(list)
     for u in units:
         for p in u["programs"]:
             owners[p].append(u["id"])
     excluded = {e["program"] for e in data.get("excluded", [])}
+    def program_of(p):
+        return "program:" + p.split(":", 1)[1].split(".", 1)[0] if p.startswith("paragraph:") else p
+
+    split = {program_of(p) for p in owners if p.startswith("paragraph:")}
     for p, ids in sorted(owners.items()):
         if len(ids) > 1:
             result.errors.append(f"{p} is in more than one unit: {', '.join(ids)}")
-        if p in excluded:
+        if program_of(p) in excluded:
             result.errors.append(f"{p} is both in unit {ids[0]} and excluded")
+    for p in sorted(split - set(owners)):
+        result.warnings.append(f"{p} is split by paragraph, but no unit lists {p} to own the code before its "
+                               "first paragraph")
 
     if conn is None:
         result.warnings.append("no store, so programs and endpoints were not checked against the map")
     else:
         known, programs = known_endpoints(conn)
-        for p in sorted(programs - set(owners) - excluded):
+        for p in sorted(programs - set(owners) - split - excluded):
             result.errors.append(f"{p} is not in any unit; add it to one or to excluded with a reason")
+        contains = collections.defaultdict(list)
+        for r in conn.execute("SELECT source, target FROM relationships WHERE kind = 'contains' "
+                              "AND target LIKE 'paragraph:%' ORDER BY line"):
+            contains[r["source"]].append(r["target"])
+        for p in sorted(split & programs):
+            missing = [q for q in contains[p] if q not in owners]
+            if missing:
+                result.errors.append(f"{p} is split by paragraph, but {len(missing)} of its {len(contains[p])} "
+                                     f"paragraphs are in no unit: "
+                                     + ", ".join(q.split(".", 1)[1] for q in missing[:10])
+                                     + (f" and {len(missing) - 10} more" if len(missing) > 10 else ""))
         for u in units:
             endpoints = [*u["programs"], *u.get("entryPoints", []), *u.get("reads", []), *u.get("writes", []),
                          *(d["on"] for d in u.get("dependencies", [])),

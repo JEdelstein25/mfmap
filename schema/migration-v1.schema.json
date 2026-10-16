@@ -65,7 +65,11 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/program" }
+          "description": "The programs the unit rewrites. To split a program across units, list each of its paragraphs as paragraph:PROGRAM.NAME in one unit, and program:PROGRAM in the unit that owns the code before its first paragraph.",
+          "items": {
+            "type": "string",
+            "pattern": "^(program:.+|paragraph:[^.]+\\..+)$"
+          }
         },
         "entryPoints": {
           "type": "array",
