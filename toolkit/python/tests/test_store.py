@@ -250,10 +250,35 @@ class StoreTest(unittest.TestCase):
             ("calls", "program:SAMPLE", "program:SAMPUTIL"),
             ("transfers", "program:SAMPLE", None),
             ("includes", "program:SAMPLE", "copybook:SAMPREC"),
+            # Schedulers: Control-M folders and conditions, CA-7 triggers.
+            ("schedules", "schedule:DAILY-Sample", "job:SAMPJOB"),
+            ("precedes", "job:SAMPJOB", "job:SAMPIMS"),
+            ("triggers", "job:SAMPJOB", "job:SAMPIMS"),
+            # z/OS Connect: API operation, asset and program; a page calling the API through a client
+            ("invokes", "api:GET /accounts/{id}", "zosasset:ACCTINQ"),
+            ("links", "zosasset:ACCTINQ", "program:SAMPLE"),
+            ("calls", "page:web/page.html", "api:GET /accounts/{id}"),
+            ("calls", "page:web/page.html", "api:DELETE /accounts/{id}"),
+            ("calls", "page:web/page.html", None),  # closeAccount builds no URL
+            # Easytrieve Plus: files by FILE name (the DD), the report, the macro and the call.
+            ("read", "program:SAMPEZT", "file:OLDMAST"),
+            ("read", "program:SAMPEZT", "file:TRANS"),
+            ("write", "program:SAMPEZT", "file:NEWMAST"),
+            ("read", "program:SAMPEZT", "file:NEWMAST"),
+            ("write", "program:SAMPEZT", "file:SORTED"),
+            ("prints", "program:SAMPEZT", "report:SAMPEZT.RPT1"),
+            ("includes", "program:SAMPEZT", "macro:SAMPMAC"),
+            ("calls", "program:SAMPEZT", "program:SAMPUTIL"),
+            # EZTPA00 runs the member in SYSIN; its FILE names are DD names.
+            ("runs", "job:SAMPEZTJ", "program:SAMPEZT"),
+            ("read", "program:SAMPEZT", "dataset:PROD.SAMPLE.OLDMAST"),
+            ("read-write", "program:SAMPEZT", "dataset:PROD.SAMPLE.NEWMAST"),
         ]:
             self.assertIn(expected, rows)
         self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)
         self.assertNotIn(("runs", "job:SAMPIMS", "program:DFSRRC00"), rows)
+        self.assertNotIn(("calls", "page:web/page.html", "api:GET /accounts/{id}/x"), rows)
+        self.assertNotIn(("read", "program:SAMPEZT", "file:ACCT"), rows)  # a KEY field, not a file
         # Control flow: where the program starts, which paragraphs fall into the next, and the
         # paragraph that makes each call.
         for expected in [

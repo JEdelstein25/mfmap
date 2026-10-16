@@ -10,7 +10,10 @@ which dataset each DD statement names. A program's batch file access (its SELECT
 is matched to the DD statement with that name in the steps that run it, giving reads and writes of
 datasets. Programs run through TSO batch (IKJEFT01 with ``RUN PROGRAM(...)`` in SYSTSIN), as Db2
 batch programs are, count as run by that step, as do IMS programs run through the region controller
-(DFSRRC00 with ``PARM='DLI|DBB|BMP,program,psb'``). Symbolic parameters (``&NAME``) are kept as written.
+(DFSRRC00 with ``PARM='DLI|DBB|BMP,program,psb'``) and Easytrieve programs run by EZTPA00 from the
+library member in SYSIN. Batch file reads and writes that resolvers named before this one record
+(``program:X`` to ``file:DD``) are matched the same way. Symbolic parameters (``&NAME``) are kept
+as written.
 """
 
 from __future__ import annotations
@@ -29,6 +32,8 @@ PROC = re.compile(r"\bPROC=([\w#@$&]+)", re.I)
 DSN = re.compile(r"\bDSN(?:AME)?=([^,\s)(]+(?:\([^)]*\))?)", re.I)
 RUN_PROGRAM = re.compile(r"\bRUN\s+PROGRAM\s*\(\s*([\w#@$]+)\s*\)", re.I)
 TSO_BATCH = {"IKJEFT01", "IKJEFT1A", "IKJEFT1B"}
+EASYTRIEVE = {"EZTPA00"}
+MEMBER = re.compile(r"\(([\w#@$]+)\)$")
 IMS_REGION = re.compile(r"\bPARM=\(?'?\s*(DLI|DBB|BMP)\s*,\s*([\w#@$]+)\s*(?:,\s*([\w#@$]+))?", re.I)
 
 
@@ -105,6 +110,9 @@ def steps(path, text) -> Iterator[Fact | dict]:
                 if run:
                     step["via"], step["program"] = step["program"], run.group(1).upper()
             dsn = DSN.search(s["operands"])
+            member = MEMBER.search(dsn.group(1)) if dsn else None
+            if step["program"] in EASYTRIEVE and dd == "SYSIN" and member:
+                step["via"], step["program"] = step["program"], member.group(1).upper()
             if dsn and dd and "." not in dd:
                 step["dds"].append((dd, dsn.group(1).upper(), s["line"]))
     if step:
@@ -116,6 +124,9 @@ def resolve(ctx: Context) -> Iterator[Fact]:
     access = collections.defaultdict(set)
     for a in ctx.conn.execute("SELECT program, resource, mode FROM access WHERE store = 'file' AND resource IS NOT NULL"):
         access[(a["program"], a["resource"].upper())].add(a["mode"])
+    for r in ctx.conn.execute("SELECT kind, source, target FROM relationships WHERE kind IN ('read', 'write') "
+                              "AND source LIKE 'program:%' AND target LIKE 'file:%'"):
+        access[(r["source"].split(":", 1)[1], r["target"].split(":", 1)[1].upper())].add(r["kind"])
 
     for path, text in ctx.files():
         if not JCL_LINE.search(text):

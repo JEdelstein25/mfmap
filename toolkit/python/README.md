@@ -205,8 +205,9 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
   BMS map source.
 - `jcl`: which job or procedure runs which program in each step (including programs run through
   TSO batch with `RUN PROGRAM` and IMS programs run through `DFSRRC00` with
-  `PARM='DLI|DBB|BMP,program,psb'`), the datasets their DD statements name, and each program's batch
-  file reads and writes matched to those datasets through its `ASSIGN` names.
+  `PARM='DLI|DBB|BMP,program,psb'`, and Easytrieve programs run by `EZTPA00` from the member in
+  `SYSIN`), the datasets their DD statements name, and each program's batch file reads and writes
+  matched to those datasets through its `ASSIGN` names (or Easytrieve `FILE` names).
 - `ddl`: Db2 tables with their columns (`column:TABLE.COLUMN`), primary keys, foreign keys
   (`references`), indexes and views (`selects-from`), from the parser's `ddl` command on the DDL
   files under the current folder and `--ddl` paths, and on any other text file, such as a DSNTIAD
@@ -214,8 +215,17 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
   programs name them, qualified or not. A table the programs use that no DDL defines is a
   `no-definition` entity, and a statement the grammar rejects is a `parse-error` entity; the Parser
   tab lists both.
+- `scheduler`: Control-M folders (or scheduling tables) that `schedule` jobs, with days and time,
+  and jobs that `precede` others through conditions, from XML `DEFTABLE` exports; CA-7 jobs that
+  `trigger` others, from `LJOB` listings.
+- `web`: REST operations from OpenAPI documents (`api:GET /accounts/{id}`), the z/OS Connect
+  asset each operation `invokes` (from `operation.yaml`) and the CICS program it `links` to or the
+  IMS transaction it `starts` (from `zosAsset.yaml`), and the web pages that call those operations
+  through a JavaScript client (`page:path`).
+- `easytrieve`: Easytrieve Plus programs (`.ezt`), the files they read and write by `FILE` name
+  (the DD name), the reports they print, the macros they include and the programs they call.
 
-To resolve something else, such as API definitions or a scheduler's job order, add a module to
+Resolvers run in name order. To resolve something else, add a module to
 `mfmap/resolvers/` with a `NAME` and a `resolve(ctx)` function that yields `Entity` and
 `Relationship` facts; `ctx` gives the store connection, the parsed programs and the repository's
 files. For what needs judgment, such as which paragraphs hold business logic, record it:

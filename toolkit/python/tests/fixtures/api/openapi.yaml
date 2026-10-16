@@ -1,0 +1,7 @@
+openapi: 3.0.0
+paths:
+  /accounts/{id}:
+    get:
+      operationId: getAccount
+    delete:
+      operationId: deleteAccount
