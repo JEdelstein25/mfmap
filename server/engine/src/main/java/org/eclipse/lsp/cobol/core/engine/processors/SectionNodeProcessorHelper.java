@@ -11,6 +11,7 @@
  * Contributors:
  *    Broadcom - initial API and implementation
  *    Amp - carry synchronized metadata into final variable nodes
+ *    Amp - keep the whole OCCURS clause on elementary tables
  *
  */
 package org.eclipse.lsp.cobol.core.engine.processors;
@@ -527,6 +528,7 @@ public class SectionNodeProcessorHelper {
               definitionNode.isDynamicLength(),
               definitionNode.isJustified(),
               definitionNode.isUnBounded());
+      variable.setOccursClause(definitionNode.getOccursClauses().get(0));
       createVariableNameNode(variable, definitionNode.getVariableName());
       for (VariableNameAndLocality nameAndLocality : definitionNode.getOccursIndexes())
         variable.addChild(

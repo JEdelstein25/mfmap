@@ -10,17 +10,23 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - keep where the EVALUATE subject is
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree;
 
 import lombok.ToString;
+import lombok.Getter;
+import lombok.Setter;
 import org.eclipse.lsp.cobol.common.model.Locality;
 import org.eclipse.lsp.cobol.common.model.NodeType;
 
 /** The class represents evaluate in COBOL. */
 @ToString(callSuper = true)
 public class EvaluateNode extends Node {
+  /** Where what follows EVALUATE, including ALSO subjects, is in the source. */
+  @Getter @Setter private Locality subjectLocality;
+
   public EvaluateNode(Locality location) {
     super(location, NodeType.EVALUATE);
   }

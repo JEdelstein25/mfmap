@@ -36,6 +36,9 @@ class ModelTest(unittest.TestCase):
         entry = p.data_item("WS-ENTRY")
         self.assertEqual((entry.occurs, entry.sync, entry.usage, entry.pic), (12, True, "COMP", "9(4)"))
         self.assertEqual(entry.parent.name, "WS-TABLE")
+        self.assertIsNone(entry.occurs_min)
+        item = p.data_item("SAMP-ITEM")
+        self.assertEqual((item.occurs, item.occurs_min, item.depending_on), (20, 1, "SAMP-COUNT"))
         self.assertEqual(p.data_item("SAMP-NAME").copybook, "SAMPREC")
         self.assertIsNone(p.data_item("WS-CUST-NAME").copybook)
         ok = p.data_item("WS-FILE-OK")
@@ -100,6 +103,18 @@ class ModelTest(unittest.TestCase):
         dynamic = [a for a in cg.data_access(self.program) if a.mode == "unknown"]
         self.assertEqual({(a.resolved, a.expression, a.candidates) for a in dynamic},
                          {("unresolved", "WS-CUST-NAME", ("DELETE FROM BANK.TEMP_TRAN",))})
+
+    def test_sql_columns_values_into_and_where(self):
+        sql = {s.location.line: s for s in self.program.sql}
+        self.assertEqual((sql[58].columns, sql[58].where), (["CUST_NAME"], "CUST_ID > :WS-CUST-ID"))
+        self.assertEqual(sql[64].into, [":WS-CUST-NAME"])
+        self.assertEqual((sql[67].columns, sql[67].values), (["CUST_ID"], [":WS-CUST-ID"]))
+
+    def test_conditions(self):
+        read = self.program.paragraph("1000-READ")
+        self.assertEqual(next(s for s in read.statements if s.verb == "IF").condition, "WS-FILE-OK")
+        loop = next(s for s in self.program.performs if s.target_name is None)
+        self.assertEqual(loop.condition, "WS-RESP > 3")
 
     def test_commit_points(self):
         self.assertEqual([(c.kind, c.statement.location.line) for c in cg.commit_points(self.program)],

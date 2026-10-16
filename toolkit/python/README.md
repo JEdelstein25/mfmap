@@ -145,6 +145,7 @@ p = project.program("ACCTUPD")
 
 item = p.data_item("ACCT-CURR-BAL")
 item.pic, item.usage, item.level, item.copybook, item.redefines, item.occurs, item.sync
+item.occurs_min, item.depending_on                # OCCURS 1 TO 20 DEPENDING ON N: 1, "N"
 [str(r.location) for r in item.references]      # every usage, with its statement
 
 for para in p.paragraphs:
@@ -152,6 +153,14 @@ for para in p.paragraphs:
 
 for s in p.cics:                                 # also p.sql, p.dli, p.calls, p.file_io
     s.command, s.option("FILE"), s.paragraph, s.source
+
+for s in p.sql:
+    s.columns, s.values, s.into, s.where           # as written, in column order
+    s.order_by, s.fetch_first, s.table_columns     # DECLARE TABLE: "ACCT_ID CHAR(11) NOT NULL", ...
+
+for s in p.statements:
+    s.condition                                  # IF, PERFORM UNTIL, EVALUATE subject
+    s.when                                       # EVALUATE: each WHEN, as written
 
 project.calls()          # CALL, LINK, XCTL, LOAD and SQL CALL edges
 project.data_access()    # store, resource, read or write, statement

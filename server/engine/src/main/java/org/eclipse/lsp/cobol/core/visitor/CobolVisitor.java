@@ -11,6 +11,8 @@
  * Contributors:
  *    Broadcom - initial API and implementation
  *    Amp - capture synchronized clauses in data descriptions
+ *    Amp - capture OCCURS DEPENDING ON
+ *    Amp - keep where IF, PERFORM UNTIL and EVALUATE conditions are
  *
  */
 
@@ -1211,7 +1213,13 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
             .map(PerformUntilConditionContext::EXIT)
             .isPresent();
 
-    return addTreeNode(ctx, locality -> new PerformUntilNode(locality, untilExit));
+    return addTreeNode(
+        ctx,
+        locality -> {
+          PerformUntilNode node = new PerformUntilNode(locality, untilExit);
+          node.setConditionLocality(span(ctx.performUntilCondition().condition(), null));
+          return node;
+        });
   }
 
   @Override
@@ -1590,18 +1598,52 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
 
   @Override
   public List<Node> visitEvaluateStatement(EvaluateStatementContext ctx) {
-    return addTreeNode(ctx, EvaluateNode::new);
+    ParserRuleContext last =
+        ctx.evaluateAlsoSelect().isEmpty()
+            ? ctx.evaluateSelect()
+            : ctx.evaluateAlsoSelect().get(ctx.evaluateAlsoSelect().size() - 1);
+    return addTreeNode(
+        ctx,
+        locality -> {
+          EvaluateNode node = new EvaluateNode(locality);
+          node.setSubjectLocality(span(ctx.evaluateSelect(), last));
+          return node;
+        });
   }
 
   @Override
   public List<Node> visitEvaluateWhen(EvaluateWhenContext ctx) {
     if (ctx.exception != null) throwMisspelledWarning(ctx.exception.getOffendingToken());
-    return addTreeNode(ctx, EvaluateWhenNode::new);
+    return addTreeNode(
+        ctx,
+        locality -> {
+          EvaluateWhenNode node = new EvaluateWhenNode(locality);
+          node.setConditionLocality(span(ctx.evaluateCondition(), ctx));
+          return node;
+        });
   }
 
   @Override
   public List<Node> visitIfStatement(IfStatementContext ctx) {
-    return addTreeNode(ctx, IfNode::new);
+    return addTreeNode(
+        ctx,
+        locality -> {
+          IfNode node = new IfNode(locality);
+          node.setConditionLocality(span(ctx.condition(), null));
+          return node;
+        });
+  }
+
+  /** Where the text from the start of one rule to the end of another (or the same) is in the source. */
+  private Locality span(ParserRuleContext from, ParserRuleContext to) {
+    if (from == null) return null;
+    Optional<Locality> start = retrieveLocality(from, extendedDocument, copybooks);
+    Optional<Locality> end = to == null ? start : retrieveLocality(to, extendedDocument, copybooks);
+    if (!start.isPresent() || !end.isPresent()) return null;
+    if (!start.get().getUri().equals(end.get().getUri())) return start.get();
+    return start.get().toBuilder()
+        .range(new Range(start.get().getRange().getStart(), end.get().getRange().getEnd()))
+        .build();
   }
 
   @Override
@@ -2180,7 +2222,6 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
   }
 
   private List<OccursClause> retrieveOccursValues(List<DataOccursClauseContext> contexts) {
-    // TODO: Process OCCURS DEPENDING ON
     return contexts.stream()
         .map(this::toOccursClause)
         .filter(Optional::isPresent)
@@ -2198,7 +2239,18 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
                     Optional.ofNullable(ctx.dataOccursTo())
                         .map(DataOccursToContext::UNBOUNDED)
                         .isPresent(),
-                    retrieveIndexNames(ctx)));
+                    retrieveIndexNames(ctx),
+                    ofNullable(ctx.qualifiedDataName())
+                        .map(
+                            name ->
+                                name.start
+                                    .getInputStream()
+                                    .getText(
+                                        org.antlr.v4.runtime.misc.Interval.of(
+                                            name.start.getStartIndex(),
+                                            name.stop.getStopIndex()))
+                                    .replaceAll("\\s+", " "))
+                        .orElse(null)));
   }
 
   private List<VariableNameAndLocality> retrieveIndexNames(DataOccursClauseContext ctx) {

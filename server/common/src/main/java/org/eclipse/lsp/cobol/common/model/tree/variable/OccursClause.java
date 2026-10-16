@@ -10,18 +10,28 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - keep the OCCURS DEPENDING ON object
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree.variable;
 
 import java.util.List;
+import lombok.AllArgsConstructor;
 import lombok.Value;
 
 /** The class represents occurs clause in COBOL. */
 @Value
+@AllArgsConstructor
 public class OccursClause {
   Integer from;
   Integer to;
   boolean isUnbounded;
   List<VariableNameAndLocality> indexed;
+  /** DEPENDING ON: the data name as written, or null. */
+  String dependingOn;
+
+  public OccursClause(
+      Integer from, Integer to, boolean isUnbounded, List<VariableNameAndLocality> indexed) {
+    this(from, to, isUnbounded, indexed, null);
+  }
 }

@@ -402,7 +402,23 @@ class DataItem:
     type = property(lambda self: self.node.data["variableType"])
     pic = property(lambda self: self.node.data.get("picClause"))
     usage = property(lambda self: self.node.data.get("usageFormat"))
-    occurs = property(lambda self: self.node.data.get("occursTimes"))
+    @property
+    def _occurs_clause(self) -> dict:
+        return self.node.data.get("occursClause") or {}
+
+    @property
+    def occurs(self) -> Optional[int]:
+        """How many times the item occurs: the TO value of OCCURS n TO m, otherwise n."""
+        clause = self._occurs_clause
+        return clause.get("to") or clause.get("from") or self.node.data.get("occursTimes")
+
+    @property
+    def occurs_min(self) -> Optional[int]:
+        """n of OCCURS n TO m; None for a fixed table."""
+        clause = self._occurs_clause
+        return clause.get("from") if clause.get("to") is not None else None
+
+    depending_on = property(lambda self: self._occurs_clause.get("dependingOn"))
     sync = property(lambda self: self.node.data.get("synchronizedClause", False))
     sync_direction = property(lambda self: self.node.data.get("synchronizedDirection"))
     location = property(lambda self: self.node.location)
@@ -503,7 +519,8 @@ class Paragraph:
 
 
 class Statement:
-    """A procedure statement. ``verb`` is the first word of its source text."""
+    """A procedure statement. ``verb`` is the first word of its source text. ``condition`` is an
+    IF's condition, a PERFORM's UNTIL condition or an EVALUATE's subject, as written."""
 
     def __init__(self, program: Program, node: Node):
         self.program = program
@@ -514,6 +531,32 @@ class Statement:
 
     location = property(lambda self: self.node.location)
     source = property(lambda self: self.node.source)
+
+    def _text(self, node: Node, field: str) -> Optional[str]:
+        """Source text at a locality field of a node, on one line."""
+        location = node.graph._location(node.data.get(field))
+        return " ".join(node.graph.source_text(location).split()) if location else None
+
+    @property
+    def condition(self) -> Optional[str]:
+        if self.node.kind == "EvaluateNode":
+            return self._text(self.node, "subjectLocality")
+        if self.node.kind == "IfNode":
+            return self._text(self.node, "conditionLocality")
+        pending = list(self.node.children)
+        while pending:  # an inline PERFORM's UNTIL, but not a nested statement's
+            node = pending.pop(0)
+            if node.kind == "PerformUntilNode":
+                return self._text(node, "conditionLocality")
+            if node.node_type not in STATEMENT_NODE_TYPES:
+                pending.extend(node.children)
+        return None
+
+    @property
+    def when(self) -> list[str]:
+        """An EVALUATE's WHEN conditions as written, in order; WHEN OTHER is "OTHER"."""
+        return [self._text(c, "conditionLocality") if c.kind == "EvaluateWhenNode" else "OTHER"
+                for c in self.node.children if c.kind in ("EvaluateWhenNode", "EvaluateWhenOtherNode")]
 
     @property
     def verb(self) -> str:
@@ -628,13 +671,24 @@ class Sql(Statement):
     """EXEC SQL. For OPEN, FETCH and CLOSE, ``tables`` comes from the cursor's DECLARE.
     ``procedure`` is a CALL's procedure name or host variable (with its colon); ``statement_name``
     names a prepared statement; ``sql_source`` is where PREPARE or EXECUTE IMMEDIATE gets its SQL
-    text: a host variable (with its colon) or a string literal."""
+    text: a host variable (with its colon) or a string literal. ``columns`` are the INSERT columns,
+    the SELECT list or the UPDATE SET columns; ``values`` the INSERT VALUES, UPDATE SET or SET
+    values in the same order; ``into`` the host variables that receive values (SELECT INTO, FETCH
+    INTO, SET); ``where``, ``order_by`` and ``fetch_first`` the statement's own WHERE, ORDER BY
+    and FETCH FIRST; ``table_columns`` a DECLARE TABLE's column definitions. All are as written."""
 
     statement_type = property(lambda self: self.node.data.get("statementType", ""))
     cursor = property(lambda self: self.node.data.get("cursorName"))
     procedure = property(lambda self: self.node.data.get("procedureName"))
     statement_name = property(lambda self: self.node.data.get("statementName"))
     sql_source = property(lambda self: self.node.data.get("sqlSource"))
+    columns = property(lambda self: self.node.data.get("columns", []))
+    values = property(lambda self: self.node.data.get("values", []))
+    into = property(lambda self: self.node.data.get("into", []))
+    where = property(lambda self: self.node.data.get("where"))
+    order_by = property(lambda self: self.node.data.get("orderBy"))
+    fetch_first = property(lambda self: self.node.data.get("fetchFirst"))
+    table_columns = property(lambda self: self.node.data.get("tableColumns", []))
     verb = property(lambda self: self.statement_type.split()[0] if self.statement_type else "EXEC")
 
     @property

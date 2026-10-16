@@ -9,6 +9,7 @@
  *
  * Contributors:
  *    Amp - test embedded statement resource metadata
+ *    Amp - test SQL columns, values, INTO host variables and WHERE condition
  */
 package org.eclipse.lsp.cobol.usecases;
 
@@ -110,6 +111,60 @@ class TestExecResourceMetadata {
     ExecSqlNode literal = sql("EXECUTE IMMEDIATE 'DELETE FROM OLD.AUDIT WHERE ID = 1'");
     assertEquals("'DELETE FROM OLD.AUDIT WHERE ID = 1'", literal.getSqlSource());
     assertTrue(new Gson().toJson(call).contains("\"procedureName\":\"PAYROLL.CALC_PAY\""));
+  }
+
+  @Test
+  void sqlColumnsValuesIntoAndWhere() {
+    ExecSqlNode insert =
+        sql("INSERT INTO PATIENT ( PATIENTID, USERNAME, DOB )\n"
+            + "       VALUES ( DEFAULT, :CA-USERID, CURRENT DATE - 1 DAY )");
+    assertEquals(Arrays.asList("PATIENTID", "USERNAME", "DOB"), insert.getColumns());
+    assertEquals(Arrays.asList("DEFAULT", ":CA-USERID", "CURRENT DATE - 1 DAY"), insert.getValues());
+    assertNull(insert.getWhere());
+    assertEquals(Arrays.asList(":X"), sql("INSERT INTO T (A) VALUES (:X)").getValues());
+    assertEquals(
+        Arrays.asList("(:X) + (:Y)"), sql("INSERT INTO T (A) VALUES ((:X) + (:Y))").getValues());
+
+    ExecSqlNode select =
+        sql("SELECT FIRSTNAME, (SELECT MAX(X) FROM T2 WHERE T2.ID = P.ID) AS M\n"
+            + "  INTO :CA-FIRST-NAME, :WS-MAX FROM PATIENT P\n"
+            + "  WHERE PATIENTID = :DB2-PATIENT-ID AND EXISTS (SELECT 1 FROM T3 WHERE T3.A = 1)");
+    assertEquals(
+        Arrays.asList("FIRSTNAME", "(SELECT MAX(X) FROM T2 WHERE T2.ID = P.ID) AS M"),
+        select.getColumns());
+    assertEquals(Arrays.asList(":CA-FIRST-NAME", ":WS-MAX"), select.getInto());
+    assertEquals(
+        "PATIENTID = :DB2-PATIENT-ID AND EXISTS (SELECT 1 FROM T3 WHERE T3.A = 1)",
+        select.getWhere());
+
+    ExecSqlNode cursor =
+        sql("DECLARE C CURSOR FOR SELECT ID, NAME FROM MEDICATION WHERE PATIENTID = :PID");
+    assertEquals(Arrays.asList("ID", "NAME"), cursor.getColumns());
+    assertEquals("PATIENTID = :PID", cursor.getWhere());
+    assertEquals(Arrays.asList(":ID", ":NAME"), sql("FETCH C INTO :ID, :NAME").getInto());
+
+    ExecSqlNode set = sql("SET :DB2-PATIENT-ID = IDENTITY_VAL_LOCAL()");
+    assertEquals(Arrays.asList(":DB2-PATIENT-ID"), set.getInto());
+    assertEquals(Arrays.asList("IDENTITY_VAL_LOCAL()"), set.getValues());
+
+    ExecSqlNode update = sql("UPDATE T SET A = :X, B = DEFAULT WHERE ID = :ID");
+    assertEquals(Arrays.asList("A", "B"), update.getColumns());
+    assertEquals(Arrays.asList(":X", "DEFAULT"), update.getValues());
+    assertEquals("ID = :ID", update.getWhere());
+    assertTrue(new Gson().toJson(update).contains("\"where\":\"ID \\u003d :ID\""));
+
+    ExecSqlNode ordered =
+        sql("DECLARE C2 CURSOR FOR SELECT ID FROM T WHERE ID IN (SELECT ID FROM U ORDER BY ID)"
+            + " ORDER BY NAME DESC, ID FETCH FIRST 10 ROWS ONLY");
+    assertEquals("NAME DESC, ID", ordered.getOrderBy());
+    assertEquals("FETCH FIRST 10 ROWS ONLY", ordered.getFetchFirst());
+
+    ExecSqlNode declared =
+        sql("DECLARE ACCOUNT TABLE ( ACCT_ID CHAR(11) NOT NULL,\n"
+            + "  BALANCE DECIMAL(12, 2), OPENED DATE NOT NULL WITH DEFAULT )");
+    assertEquals(
+        Arrays.asList("ACCT_ID CHAR(11) NOT NULL", "BALANCE DECIMAL(12, 2)", "OPENED DATE NOT NULL WITH DEFAULT"),
+        declared.getTableColumns());
   }
 
   private ExecSqlNode sql(String source) {

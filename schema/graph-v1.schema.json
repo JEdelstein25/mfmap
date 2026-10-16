@@ -105,7 +105,14 @@
               "cursorName": { "type": "string" },
               "procedureName": { "type": "string" },
               "statementName": { "type": "string" },
-              "sqlSource": { "type": "string" }
+              "sqlSource": { "type": "string" },
+              "columns": { "type": "array", "items": { "type": "string" }, "description": "INSERT columns, SELECT list or UPDATE SET columns, as written." },
+              "values": { "type": "array", "items": { "type": "string" }, "description": "INSERT VALUES, UPDATE SET or SET values as written, in column order." },
+              "into": { "type": "array", "items": { "type": "string" }, "description": "Host variables that receive values: SELECT INTO, FETCH INTO, SET targets." },
+              "where": { "type": "string", "description": "The statement's own WHERE condition as written." },
+              "orderBy": { "type": "string", "description": "The statement's own ORDER BY sort keys as written." },
+              "fetchFirst": { "type": "string", "description": "The statement's own FETCH FIRST clause as written." },
+              "tableColumns": { "type": "array", "items": { "type": "string" }, "description": "DECLARE TABLE column definitions as written." }
             }
           }
         },
@@ -120,11 +127,28 @@
               "picClause": { "type": "string" },
               "usageFormat": { "type": "string" },
               "occursTimes": { "type": "integer" },
+              "occursClause": {
+                "type": "object",
+                "properties": {
+                  "from": { "type": "integer" },
+                  "to": { "type": "integer" },
+                  "isUnbounded": { "type": "boolean" },
+                  "dependingOn": { "type": "string", "description": "DEPENDING ON data name as written." }
+                }
+              },
               "redefines": { "type": "boolean" },
               "synchronizedClause": { "type": "boolean" },
               "synchronizedDirection": { "enum": ["LEFT", "RIGHT"] }
             }
           }
+        },
+        {
+          "if": { "properties": { "kind": { "enum": ["IfNode", "PerformUntilNode", "EvaluateWhenNode"] } } },
+          "then": { "properties": { "conditionLocality": { "$ref": "#/$defs/locality", "description": "Where the condition is in the source." } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "EvaluateNode" } } },
+          "then": { "properties": { "subjectLocality": { "$ref": "#/$defs/locality", "description": "Where what follows EVALUATE is in the source." } } }
         },
         {
           "if": { "properties": { "kind": { "const": "VariableUsageNode" } } },
