@@ -11,6 +11,7 @@
  * Contributors:
  *    Broadcom - initial API and implementation
  *    Amp - preserve recognized EXEC DLI statements in the dialect tree
+ *    Amp - parse EXEC DLI blocks as statements
  *
  */
 package org.eclipse.lsp.cobol.dialects.ibm;
@@ -110,7 +111,7 @@ public class ParserStage implements Stage<AnalysisContext, ParserStageResult, Di
               .copybookId(context.getCopybooksRepository().getCopybookIdByUri(location.getUri()))
               .build();
       ExecDliNode dli =
-          token.getChannel() == CobolLexer.HIDDEN
+          token.getType() == CobolLexer.EXEC_DLI
               ? DliParser.parse(
                   token.getText(),
                   locality,
@@ -146,8 +147,9 @@ public class ParserStage implements Stage<AnalysisContext, ParserStageResult, Di
   }
 
   private static boolean unknownExecToken(Token t) {
-    return t.getType() == CobolLexer.UNKNOWN_EXEC
-        && t.getChannel() != CobolLexer.DEFAULT_TOKEN_CHANNEL;
+    return t.getType() == CobolLexer.EXEC_DLI
+        || t.getType() == CobolLexer.UNKNOWN_EXEC
+            && t.getChannel() != CobolLexer.DEFAULT_TOKEN_CHANNEL;
   }
 
   private static SyntaxError unknownExecMessage(

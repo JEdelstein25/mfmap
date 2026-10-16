@@ -10,6 +10,7 @@
  *
  * Contributors:
  *   Broadcom - initial API and implementation
+ *   Amp - lex terminated EXEC DLI blocks as EXEC_DLI statements
  */
     
 lexer grammar CobolLexer;
@@ -20,8 +21,15 @@ lexer grammar CobolLexer;
 }
 
 channels{COMMENTS, TECHNICAL, HIDDEN_ERROR}
+tokens{EXEC_DLI}
 @lexer::members {
    boolean enableCobolSpecialSeparators = true;
+
+   // A terminated EXEC DLI block is a statement, so IF and other branches that hold only one parse.
+   private void hideExec() {
+      if (getText().matches("(?is)EXEC\\s+DLI\\b.*")) setType(EXEC_DLI);
+      else setChannel(HIDDEN);
+   }
    public static final List<Integer> cobolVerbTokens = new ArrayList()
    {{
       add(ACCEPT);
@@ -884,12 +892,12 @@ UNKNOWN_EXEC : E X E C [ \n\r]+
             (~[."']|STRINGLITERAL)*?
             (
                 E N D MINUSCHAR E X E C
-                { setChannel(HIDDEN); }
+                { hideExec(); }
                 |
                 '.'
                 (
                     (~["'] | STRINGLITERAL)*? E N D MINUSCHAR E X E C
-                    { setChannel(HIDDEN); }
+                    { hideExec(); }
                     |
                     { setChannel(HIDDEN_ERROR); }
                 )
