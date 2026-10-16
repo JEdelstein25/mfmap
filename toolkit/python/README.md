@@ -13,7 +13,7 @@ SPDX-License-Identifier: EPL-2.0
 `mfmap` reads the output of `server.jar analysis --graph` and gives you typed COBOL programs:
 data items with their clauses, paragraphs, typed statements, and references resolved by node ID.
 It also lists calls between programs, Db2 stored procedure calls with their definitions, reads
-and writes of Db2 tables, VSAM files, batch files, IMS segments and CICS queues, dynamic SQL, and
+and writes of Db2 tables, VSAM files, batch files, IMS segments, CICS and MQ queues, dynamic SQL, and
 commit points, each with its file and line. It has no dependencies beyond Python 3.9.
 
 ## Parse a source tree
@@ -301,6 +301,15 @@ first 8 bytes of its `VALUE`, `resolved` `value`). A call without SSAs is `infer
 segment an SSA call read into the same I/O area on the same PCB, and a call on a PCB that no call
 ever qualifies is store `ims-message` with the PCB as its resource (the I/O or an alternate PCB, or a
 GSAM PCB). Check `inferred` rows against the PSB.
+
+### MQ calls
+
+`MQGET` (read), `MQPUT` and `MQPUT1` (write) are access with store `mq`. The queue is the item
+MOVEd into `MQOD-OBJECTNAME` before the `MQOPEN` that set the call's handle, or before the
+`MQPUT1`, in the same paragraph (else any item MOVEd into it). A handle keeps its queue through
+MOVEs after the `MQOPEN` in its paragraph, and a MOVE into the handle before the call picks which
+open it uses. `resource` is the queue name when that item has a literal VALUE; otherwise
+`expression` names the item and `candidates` lists the literals the program MOVEs into it.
 
 ### How names are resolved
 

@@ -116,6 +116,18 @@ class ModelTest(unittest.TestCase):
         loop = next(s for s in self.program.performs if s.target_name is None)
         self.assertEqual(loop.condition, "WS-RESP > 3")
 
+    def test_mq_calls(self):
+        """MQGET and MQPUT reach the queue through the handle MQOPEN set (a MOVE into the handle
+        picks which open); MQPUT1 names it in the object descriptor it is passed."""
+        program = cg.load(FIXTURES / "MQCALL.json", path_map={"/FIXTURE": str(FIXTURES)}).programs[0]
+        access = [(a.store, a.resource, a.mode, a.resolved, a.expression, a.candidates, a.statement.location.line)
+                  for a in cg.data_access(program)]
+        self.assertEqual(access, [
+            ("mq", None, "read", "unresolved", "INPUT-QUEUE-NAME", (), 43),
+            ("mq", None, "write", "unresolved", "ERROR-QUEUE-NAME", ("SAMP.ERROR",), 46),
+            ("mq", "SAMP.REPLY", "write", "value", "REPLY-QUEUE-NAME", (), 50),
+        ])
+
     def test_commit_points(self):
         self.assertEqual([(c.kind, c.statement.location.line) for c in cg.commit_points(self.program)],
                          [("COMMIT", 96), ("SYNCPOINT ROLLBACK", 97)])

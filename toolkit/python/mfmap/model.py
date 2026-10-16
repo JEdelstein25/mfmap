@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import collections
 import json
 import os
 import re
@@ -43,6 +44,8 @@ DLI_WRITES = {"ISRT", "REPL", "DLET"}
 DLI_HOLDS = {"GHU", "GHN", "GHNP"}
 DLI_COMMITS = {"CHKP", "SYMCHKP", "SYNC", "ROLB", "ROLL"}
 DLI_INTERFACES = {"CBLTDLI", "AIBTDLI", "CEETDLI"}  # CALL interfaces to IMS DL/I, not programs
+MQ_READS = {"MQGET"}
+MQ_WRITES = {"MQPUT", "MQPUT1"}
 
 
 @dataclass(frozen=True)
@@ -375,15 +378,21 @@ class Program:
         The item can also get its value from a caller, so this list may be incomplete."""
         values = []
         for s in self.statements:
-            if s.verb != "MOVE":
-                continue
-            match = re.match(r"MOVE\s+(.+?)\s+TO\s+(.+)$", " ".join(s.source.split()), re.IGNORECASE)
-            targets = re.split(r"[\s,]+", match.group(2).upper().rstrip(".")) if match else []
+            source, targets = move_parts(s)
             if name.upper() in targets:
-                value, _ = self.resolve(match.group(1))
+                value, _ = self.resolve(source)
                 if value and value not in values:
                     values.append(value)
         return values
+
+
+def move_parts(s: "Statement") -> tuple[Optional[str], list[str]]:
+    """For a MOVE: the sending text and the upper-case words of the receiving list (names, OF
+    qualifiers). Otherwise (None, [])."""
+    if s.verb != "MOVE":
+        return None, []
+    match = re.match(r"MOVE\s+(.+?)\s+TO\s+(.+)$", " ".join(s.source.split()), re.IGNORECASE)
+    return (match.group(1), re.split(r"[\s,]+", match.group(2).upper().rstrip("."))) if match else (None, [])
 
 
 def is_data_item(node: Node) -> bool:
@@ -857,12 +866,12 @@ class Access:
 
     program: Program
     statement: Statement
-    store: str  # db2, vsam, file, ims, ims-message or queue
+    store: str  # db2, vsam, file, ims, ims-message, queue (CICS TS/TD) or mq
     resource: Optional[str]
     mode: str  # read, write, read-write, or unknown for dynamic SQL
     resolved: str  # literal, value, declared, inferred or unresolved
     expression: str
-    candidates: tuple = ()  # for dynamic SQL: SQL text the program MOVEs into the host variable
+    candidates: tuple = ()  # for dynamic SQL or an MQ queue: what the program MOVEs into the item
 
     @property
     def paragraph(self) -> Optional[Paragraph]:
@@ -891,6 +900,55 @@ def call_edges(program: Program) -> Iterator[CallEdge]:
                 yield CallEdge(program, s, "SQL CALL", target, how, name, moved)
             else:
                 yield CallEdge(program, s, "SQL CALL", s.procedure, "literal", s.procedure)
+
+
+def mq_queues(program: Program) -> dict["Call", list[str]]:
+    """The queue-name items each MQGET, MQPUT and MQPUT1 uses. MQPUT1 names its queue in the object
+    descriptor; MQGET and MQPUT use a handle from MQOPEN. A queue name is the last item MOVEd into
+    MQOD-OBJECTNAME in the paragraph before the MQOPEN or MQPUT1, else any item MOVEd into it. A handle
+    keeps its queue through MOVEs later in the MQOPEN's paragraph, and a MOVE into the handle earlier
+    in the MQGET's or MQPUT's paragraph says which handle it uses."""
+
+    def before(s):
+        siblings = s.paragraph.statements if s.paragraph else program.statements
+        return [m for m in siblings if m.location and s.location and m.location.line < s.location.line]
+
+    def object_names(s, od):
+        def into(targets):
+            if "MQOD-OBJECTNAME" not in targets:
+                return False
+            rest = targets[targets.index("MQOD-OBJECTNAME") + 1:]
+            return not rest or rest[0] not in ("OF", "IN") or rest[1:2] == [od.upper()]
+        near = [move_parts(m)[0] for m in before(s) if into(move_parts(m)[1])]
+        if near:
+            return near[-1:]
+        return list(dict.fromkeys(src for src, t in map(move_parts, program.statements) if into(t)))
+
+    def arg_names(s):
+        return [(program.item(a.refs("variableDefinitionNode")[0]).name if a.refs("variableDefinitionNode")
+                 and program.item(a.refs("variableDefinitionNode")[0]) else a.source.strip()) for a in s.arguments]
+
+    calls = [(s, (s.target or "").upper(), arg_names(s)) for s in program.calls]
+    handles = collections.defaultdict(list)
+    for s, target, args in calls:
+        if target == "MQOPEN" and len(args) >= 4:
+            names = object_names(s, args[1])
+            handles[args[3].upper()] += names
+            siblings = s.paragraph.statements if s.paragraph else program.statements
+            for m in siblings:
+                src, targets = move_parts(m)
+                if m.location and s.location and m.location.line > s.location.line and (src or "").upper() == args[3].upper():
+                    for t in targets:
+                        handles[t] += names
+    out = {}
+    for s, target, args in calls:
+        if target == "MQPUT1" and len(args) >= 2:
+            out[s] = object_names(s, args[1])
+        elif target in MQ_READS | MQ_WRITES and len(args) >= 2:
+            handle = args[1].upper()
+            moved = [src for src, t in map(move_parts, before(s)) if handle in t]
+            out[s] = list(dict.fromkeys(handles[(moved[-1] if moved else handle).upper()]))
+    return out
 
 
 def data_access(program: Program) -> Iterator[Access]:
@@ -924,6 +982,12 @@ def data_access(program: Program) -> Iterator[Access]:
                 yield Access(program, s, "ims", segment, mode, "literal" if segment else "unresolved",
                              segment or "")
     yield from dli_access(program)
+    for s, names in mq_queues(program).items():
+        mode = "read" if s.target.upper() in MQ_READS else "write"
+        for name in names or [None]:
+            resource, how = program.resolve(name)
+            moved = tuple(program.moved_values(name)) if name and resource is None else ()
+            yield Access(program, s, "mq", resource, mode, how, name or s.arguments[1].source.strip(), moved)
     for s in program.file_io:
         f = s.file
         if s.verb == "OPEN":
