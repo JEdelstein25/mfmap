@@ -11,6 +11,7 @@
  * Contributors:
  *    Broadcom - initial API and implementation
  *    Amp - add the graph command
+ *    Amp - add the ddl command
  *
  */
 package org.eclipse.lsp.cobol.cli.command;
@@ -56,7 +57,8 @@ import picocli.CommandLine;
       ListCopybooks.class,
       CliAnalysis.class,
       CliCFAST.class,
-      CliGraph.class
+      CliGraph.class,
+      CliDdl.class
     })
 @Slf4j
 public class Cli implements Callable<Integer> {

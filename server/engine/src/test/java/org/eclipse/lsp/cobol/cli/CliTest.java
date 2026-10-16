@@ -11,6 +11,7 @@
  * Contributors:
  *    Broadcom - initial API and implementation
  *    Amp - verify AST selection, compact references, graph output, the graph command and CFAST
+ *    Amp - list the ddl command
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -64,6 +65,10 @@ class CliTest {
           + "  graph           print graph output for each program path read from stdin, one"
           + System.lineSeparator()
           + "                    JSON per line"
+          + System.lineSeparator()
+          + "  ddl             print the tables, keys, indexes and views in Db2 DDL files,"
+          + System.lineSeparator()
+          + "                    one JSON per file"
           + System.lineSeparator();
 
   @Test
@@ -92,8 +97,9 @@ class CliTest {
   void testCliCommands() {
     CommandLine commandLine = new CommandLine(new Cli());
     Set<String> commandList = commandLine.getSubcommands().keySet();
-    assertEquals(5, commandList.size());
+    assertEquals(6, commandList.size());
     assertTrue(commandList.contains("graph"));
+    assertTrue(commandList.contains("ddl"));
     assertTrue(commandList.contains("analysis"));
     assertTrue(commandList.contains("list_copybooks"));
     assertTrue(commandList.contains("list_sources"));
