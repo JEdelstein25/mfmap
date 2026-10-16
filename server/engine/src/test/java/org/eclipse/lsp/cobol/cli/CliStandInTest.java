@@ -9,6 +9,7 @@
  *
  * Contributors:
  *    Amp - verify the DFHAID and DFHBMSCA stand-ins and the DL/I interface block
+ *    Amp - verify the CEEIGZCT stand-in
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -88,6 +89,31 @@ class CliStandInTest {
             "-cf",
             copybooks.toString());
     assertEquals(Collections.singletonList("Variable DFHPF3 is not defined"), errors(output));
+  }
+
+  @Test
+  void languageEnvironmentConditionResolvesWithoutCopybookFolders(@TempDir Path dir) throws Exception {
+    JsonObject output =
+        analyze(
+            dir,
+            "       IDENTIFICATION DIVISION.\n"
+                + "       PROGRAM-ID. LESTAND.\n"
+                + "       DATA DIVISION.\n"
+                + "       WORKING-STORAGE SECTION.\n"
+                + "       01 FC.\n"
+                + "          02 CONDITION-TOKEN-VALUE.\n"
+                + "           COPY CEEIGZCT.\n"
+                + "             03 CASE-1-CONDITION-ID PIC X(4).\n"
+                + "             03 CASE-SEV-CTL PIC X.\n"
+                + "             03 FACILITY-ID PIC XXX.\n"
+                + "          02 I-S-INFO PIC S9(9) BINARY.\n"
+                + "       PROCEDURE DIVISION.\n"
+                + "           IF NOT CEE000 OF FC\n"
+                + "              GOBACK\n"
+                + "           END-IF.\n");
+    assertEquals(Collections.emptyList(), errors(output));
+    JsonObject cee000 = find(output.getAsJsonObject("tree"), "CEE000");
+    assertEquals("CEEIGZCT", cee000.getAsJsonObject("locality").get("copybookId").getAsString());
   }
 
   private static JsonObject analyze(Path dir, String text, String... options) throws Exception {

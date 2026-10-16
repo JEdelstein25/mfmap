@@ -27,6 +27,10 @@ export MFMAP_JAR=$PWD/server/engine/target/server.jar
 mfmap parse src -cf src/copybooks -cf src/maps -ce cpy -ce CPY -j 6
 ```
 
+Files named on the command line are parsed whatever their extension. In folders, `-se` picks
+other program extensions, and `-se ''` picks members with no extension, as in a PDS copied off
+the mainframe. Hidden folders such as `.git` are skipped.
+
 `-j` sets how many parser processes run at once (default 4). Each one stays up and parses program
 after program, so Java start-up is paid once per process, and a separate pool of Python processes
 records the results. 44 programs take about 9 seconds with `-j 4`; 440 take about 30.
@@ -79,6 +83,20 @@ reach it from elsewhere through a tunnel or port forward. To keep the notes and 
 while ignoring the rest of the store, add `.mfmap/*`, `!.mfmap/notes.md` and
 `!.mfmap/questions.json` to `.gitignore`.
 
+### Copybooks your build generates
+
+BMS symbolic maps are written by the build, not kept in source. Generate them from the map source
+into a folder outside the application source and pass it to `parse`:
+
+```sh
+mfmap bms-copybooks src/maps --out .mfmap/copybooks/bms
+mfmap parse src -cf src/copybooks -cf .mfmap/copybooks/bms -ce cpy
+```
+
+Each `NAME.bms` becomes `NAME.cpy`, named after the file as builds name the member. Names, lengths
+and `PICIN`/`PICOUT` follow the map; byte offsets follow IBM's documented layout, so check them
+against your build's copybooks before relying on them.
+
 ### Copybooks IBM supplies
 
 - `DFHAID` and `DFHBMSCA` (CICS): the parser has stand-ins it uses when your copybook folders
@@ -86,6 +104,8 @@ while ignoring the rest of the store, add `.mfmap/*`, `!.mfmap/notes.md` and
   release if a program compares fields with literal bytes.
 - `SQLCA` and `SQLDA` (Db2), `DFHEIBLK` (CICS) and the DL/I interface block for `EXEC DLI`
   programs are defined by the parser.
+- `CEEIGZCT` (Language Environment): the parser has a stand-in with only `CEE000`, the success
+  condition. Pass the folder with IBM's copybook (`SCEESAMP`) if a program tests other conditions.
 - IBM MQ copybooks (`CMQV`, `CMQODV`, ...): download them from IBM's free MQ redistributable
   client. They are IBM's files under IBM's license, so this project does not ship them:
 
