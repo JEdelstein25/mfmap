@@ -33,7 +33,7 @@ public final class SyntaxBuilder {
   /**
    * @param ruleNames the parser's rule names
    * @param nested rules that have their own node and are written as a stub
-   * @param verb the text of a stub
+   * @param verb the text of a stub, or null to leave out a rule that continues the previous one
    * @param tokenText the text of a token
    */
   public SyntaxBuilder(
@@ -59,7 +59,10 @@ public final class SyntaxBuilder {
 
   private Syntax rule(ParserRuleContext rule, boolean root) {
     String outer = ruleNames[rule.getRuleIndex()];
-    if (!root && nested.test(rule)) return new Syntax("statement", null, verb.apply(rule), null);
+    if (!root && nested.test(rule)) {
+      String text = verb.apply(rule);
+      return text == null ? null : new Syntax("statement", null, text, null);
+    }
     ParserRuleContext current = rule;
     String kind = outer;
     while (current.getChildCount() == 1

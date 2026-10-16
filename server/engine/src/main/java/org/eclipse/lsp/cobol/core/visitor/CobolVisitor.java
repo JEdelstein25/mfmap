@@ -1074,12 +1074,16 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
     return result;
   }
 
-  /** The first word of a nested statement, or "EXEC CICS" and the like for an EXEC block. */
+  /**
+   * The first word of a nested statement, or "EXEC CICS" and the like for an EXEC block. A
+   * replaced EXEC block is one filler token per line; the lines after the first give null.
+   */
   private String verb(ParserRuleContext rule) {
     String[] words = tokenText(rule.start).trim().split("\\s+");
-    return words.length > 1 && "EXEC".equalsIgnoreCase(words[0])
-        ? (words[0] + " " + words[1]).toUpperCase(Locale.ROOT)
-        : words[0].toUpperCase(Locale.ROOT);
+    if (words.length > 1 && "EXEC".equalsIgnoreCase(words[0]))
+      return (words[0] + " " + words[1]).toUpperCase(Locale.ROOT);
+    if (rule.start.getType() == CobolLexer.ZERO_WIDTH_SPACE) return null;
+    return words[0].toUpperCase(Locale.ROOT);
   }
 
   /** A token's text, or for a dialect filler the source text it stands for. */

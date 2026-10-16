@@ -12,6 +12,7 @@
  *    Broadcom - initial API and implementation
  *    Amp - verify AST selection, compact references, graph output, the graph command and CFAST
  *    Amp - list the ddl command
+ *    Amp - verify graph IDs name one node each
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -233,6 +234,51 @@ class CliTest {
             .getAsJsonObject("asts")
             .getAsJsonObject("VALIDATION");
     assertSameTree(last, output.getAsJsonObject("tree"));
+  }
+
+  @Test
+  void graphIdsNameOneNodeEachWhenACopybookHasValueClauses(@TempDir Path directory)
+      throws Exception {
+    Path copybooks = Files.createDirectory(directory.resolve("cpy"));
+    Files.write(
+        copybooks.resolve("CB.cpy"),
+        ("       01 GROUP-A.\n          05 FIELD-A PIC X VALUE SPACES.\n"
+                + "          05 FIELD-B PIC 9.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    Path source = directory.resolve("DUP.cbl");
+    Files.write(
+        source,
+        ("       IDENTIFICATION DIVISION.\n       PROGRAM-ID. DUP.\n       DATA DIVISION.\n"
+                + "       WORKING-STORAGE SECTION.\n       COPY CB.\n"
+                + "       PROCEDURE DIVISION.\n           DISPLAY FIELD-B.\n           GOBACK.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    JsonObject output =
+        run("analysis", "-s", source.toString(), "-cf", copybooks.toString(), "-ce", "cpy", "--graph");
+    java.util.Map<String, List<JsonObject>> byId = new java.util.HashMap<>();
+    collectAll(output.getAsJsonObject("tree"), byId);
+    byId.forEach(
+        (id, nodes) ->
+            nodes.forEach(node -> assertEquals(nodes.get(0), node, id + " names two nodes")));
+    String target =
+        byId.values().stream()
+            .map(nodes -> nodes.get(0))
+            .filter(n -> "VariableUsageNode".equals(n.get("kind").getAsString()))
+            .filter(n -> "FIELD-B".equals(n.get("name").getAsString()))
+            .findFirst()
+            .orElseThrow(AssertionError::new)
+            .getAsJsonArray("definitions")
+            .get(0)
+            .getAsJsonObject()
+            .get("ref")
+            .getAsString();
+    assertEquals("FIELD-B", byId.get(target).get(0).get("name").getAsString());
+  }
+
+  private static void collectAll(JsonObject node, java.util.Map<String, List<JsonObject>> nodes) {
+    nodes
+        .computeIfAbsent(node.get("id").getAsString(), id -> new java.util.ArrayList<>())
+        .add(node);
+    node.getAsJsonArray("children").forEach(c -> collectAll(c.getAsJsonObject(), nodes));
   }
 
   @Test

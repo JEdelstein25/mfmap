@@ -9,6 +9,7 @@
  *
  * Contributors:
  *    Amp - serialize the final syntax tree with node IDs and references by ID
+ *    Amp - give a node that sits under two parents one ID
  *
  */
 package org.eclipse.lsp.cobol.cli.command;
@@ -53,7 +54,9 @@ final class AstGraphSerializer {
           .create();
 
   private AstGraphSerializer(Node root) {
-    root.getDepthFirstStream().forEach(node -> ids.put(node, "n" + ids.size()));
+    // A node can sit under two parents (a VALUE literal under a copybook's definition node and
+    // its data item); it keeps its first ID so the next node does not get the same one.
+    root.getDepthFirstStream().forEach(node -> ids.putIfAbsent(node, "n" + ids.size()));
   }
 
   /**

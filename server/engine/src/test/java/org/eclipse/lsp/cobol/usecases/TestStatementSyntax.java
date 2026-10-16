@@ -53,6 +53,10 @@ class TestStatementSyntax {
           + "           PERFORM VARYING {$WS-B} FROM 1 BY 1 UNTIL {$WS-B} > 3\n"
           + "              CONTINUE\n"
           + "           END-PERFORM\n"
+          + "           IF {$WS-A} > 1\n"
+          + "              EXEC CICS SYNCPOINT\n"
+          + "              END-EXEC\n"
+          + "           END-IF\n"
           + "           CALL {%'SUBPGM'} USING BY CONTENT {$WS-A} BY REFERENCE {$WS-C}\n"
           + "           GOBACK.\n";
 
@@ -81,6 +85,8 @@ class TestStatementSyntax {
                 + " [UNTIL [arithmeticExpression:WS-B [relationalOperator:> arithmeticExpression:3]]]]]"
                 + " statement:CONTINUE END-PERFORM]",
             "continueStatement:CONTINUE",
+            "IF [arithmeticExpression:WS-A [relationalOperator:> arithmeticExpression:1]]"
+                + " [statement:EXEC CICS] END-IF",
             "CALL constantName:'SUBPGM' [USING [BY CONTENT generalIdentifier:WS-A]"
                 + " [BY REFERENCE callByReference:WS-C]]",
             "gobackStatement:GOBACK"),
