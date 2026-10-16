@@ -64,6 +64,18 @@
         }
       ]
     },
+    "syntax": {
+      "type": "object",
+      "description": "A part of a statement. `rule` is the grammar rule, which names the part's role, such as moveToSendingArea or dbs_where_clause; when rules with one child each are merged, `kind` is the innermost, such as variableUsageName or literal. A part with one token has `text`; a longer one has `items`, each a keyword or operator string or a nested part. A nested statement, which has its own node, is {\"rule\": \"statement\", \"text\": its verb}. Text a CICS or SQL dialect replaced, such as DFHRESP(NORMAL), is given as written.",
+      "required": ["rule"],
+      "properties": {
+        "rule": { "type": "string" },
+        "kind": { "type": "string" },
+        "text": { "type": "string" },
+        "items": { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/syntax" }] } }
+      },
+      "additionalProperties": false
+    },
     "option": {
       "type": "object",
       "required": ["name"],
@@ -83,7 +95,8 @@
         "nodeType": { "type": "string" },
         "dialect": { "type": "string" },
         "locality": { "$ref": "#/$defs/locality" },
-        "children": { "type": "array", "items": { "$ref": "#/$defs/node" } }
+        "children": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+        "syntax": { "$ref": "#/$defs/syntax", "description": "Statements and EXEC SQL blocks: the grammar structure, keeping every token." }
       },
       "allOf": [
         {

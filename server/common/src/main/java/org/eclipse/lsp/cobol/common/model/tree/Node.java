@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - keep the grammar structure of statements
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree;
@@ -35,6 +36,9 @@ public abstract class Node {
 
   private final List<Node> children = new CopyOnWriteArrayList<>();
   @ToString.Exclude @Setter private transient Node parent;
+
+  /** The grammar structure of a statement, or null. */
+  @ToString.Exclude @Setter private Syntax syntax;
 
   protected Node(Locality location, NodeType nodeType, String dialect) {
     this.locality = location;

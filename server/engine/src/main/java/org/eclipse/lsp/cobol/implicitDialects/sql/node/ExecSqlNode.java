@@ -14,6 +14,7 @@
  *    Amp - stored procedure names and dynamic SQL statement sources
  *    Amp - columns, values, INTO host variables and WHERE condition
  *    Amp - ORDER BY, FETCH FIRST and DECLARE TABLE columns
+ *    Amp - keep the grammar structure of the statement: columns, predicates, host variables
  *
  */
 
@@ -35,6 +36,7 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 import org.eclipse.lsp.cobol.common.model.Locality;
 import org.eclipse.lsp.cobol.common.model.NodeType;
 import org.eclipse.lsp.cobol.common.model.tree.Node;
+import org.eclipse.lsp.cobol.core.visitor.SyntaxBuilder;
 import org.eclipse.lsp.cobol.implicitDialects.sql.Db2SqlDialect;
 import org.eclipse.lsp.cobol.implicitDialects.sql.Db2SqlExecParser;
 
@@ -42,6 +44,9 @@ import org.eclipse.lsp.cobol.implicitDialects.sql.Db2SqlExecParser;
 @ToString(callSuper = true)
 @EqualsAndHashCode(callSuper = true)
 public class ExecSqlNode extends Node {
+  private static final SyntaxBuilder SYNTAX =
+      new SyntaxBuilder(Db2SqlExecParser.ruleNames, rule -> false, rule -> null, t -> t.getText());
+
   @Getter private String statementType = "";
   @Getter private final List<String> tables = new ArrayList<>();
   @Getter private String cursorName;
@@ -97,6 +102,7 @@ public class ExecSqlNode extends Node {
     tableColumns.clear();
     statementType = tree.start.getText().toUpperCase(Locale.ROOT);
     collect(tree, false);
+    setSyntax(SYNTAX.build(tree));
   }
 
   private void collect(ParseTree tree, boolean nested) {

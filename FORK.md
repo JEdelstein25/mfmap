@@ -29,6 +29,7 @@ All changes are in the language server under `server/`. Each modified file lists
 11. **OCCURS DEPENDING ON:** OCCURS clauses record their DEPENDING ON object, and elementary tables keep their whole OCCURS clause (`TO` and `DEPENDING ON`), not just the first count.
 12. **Conditions:** `IF`, `PERFORM ... UNTIL` and `EVALUATE ... WHEN` nodes record where their condition is in the source, and `EVALUATE` where its subject is. (The parser's working text has CICS and SQL fragments such as `DFHRESP(NORMAL)` blanked out, so the text is read from the source.)
 13. **`ddl` command:** parses Db2 DDL files (including DDL inside JCL) with the embedded SQL grammar and prints their tables, columns, keys, indexes and views as JSON ([server/CLI.md](server/CLI.md)).
+14. **Statement syntax:** every statement node and every `EXEC SQL` node has a `syntax` field with its grammar structure: each keyword and operator, and each operand under the rule that names its role (`moveToSendingArea`, `computeStore`, `relationalOperator`, `callByContentPhrase`, `stringIntoPhrase`, `dbs_where_clause`, `target_variable_names_loop` and so on). Nested statements are written as stubs, since they have their own nodes. Text a dialect replaced inside a COBOL statement, such as `DFHRESP(NORMAL)`, is given as written. `SyntaxBuilder` builds it; `Syntax` is the node field.
 
 ## Toolkit
 

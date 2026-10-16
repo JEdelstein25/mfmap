@@ -13,6 +13,7 @@
  *    Amp - capture synchronized clauses in data descriptions
  *    Amp - capture OCCURS DEPENDING ON
  *    Amp - keep where IF, PERFORM UNTIL and EVALUATE conditions are
+ *    Amp - keep the grammar structure of statements
  *
  */
 
@@ -87,6 +88,13 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
   protected final CachingConfigurationService cachingConfigurationService;
 
   private final TextExtractionState text;
+  private final Map<String, List<String>> sourceLines = new HashMap<>();
+  private final SyntaxBuilder syntax =
+      new SyntaxBuilder(
+          CobolParser.ruleNames,
+          rule -> rule instanceof StatementContext || rule instanceof ConditionalStatementCallContext,
+          this::verb,
+          this::tokenText);
 
   private static final Pattern JAVA_DIRECTIVE_PATTERN =
       Pattern.compile("(?i)>>(\\s*)(JAVA-CALLABLE|JAVA-SHAREABLE\\s+(?:ON|OFF))\\s*(\\S.*)?$");
@@ -1052,7 +1060,63 @@ public final class CobolVisitor extends CobolParserBaseVisitor<List<Node>> {
   public List<Node> visitStatement(StatementContext ctx) {
     areaBWarning(ctx);
     if (ctx.exception != null) throwMisspelledWarning(ctx.exception.getOffendingToken());
-    return visitChildren(ctx);
+    List<Node> result = visitChildren(ctx);
+    if (result.size() == 1 && ctx.getChild(0) instanceof ParserRuleContext) {
+      Node node = result.get(0);
+      // A statement the visitor builds no node for returns its operands; they get no syntax.
+      if (!(node instanceof QualifiedReferenceNode
+          || node instanceof VariableUsageNode
+          || node instanceof LiteralNode
+          || node instanceof CodeBlockUsageNode
+          || node instanceof FunctionReference))
+        node.setSyntax(syntax.build((ParserRuleContext) ctx.getChild(0)));
+    }
+    return result;
+  }
+
+  /** The first word of a nested statement, or "EXEC CICS" and the like for an EXEC block. */
+  private String verb(ParserRuleContext rule) {
+    String[] words = tokenText(rule.start).trim().split("\\s+");
+    return words.length > 1 && "EXEC".equalsIgnoreCase(words[0])
+        ? (words[0] + " " + words[1]).toUpperCase(Locale.ROOT)
+        : words[0].toUpperCase(Locale.ROOT);
+  }
+
+  /** A token's text, or for a dialect filler the source text it stands for. */
+  private String tokenText(Token token) {
+    if (token.getType() != CobolLexer.ZERO_WIDTH_SPACE) return token.getText();
+    int line = token.getLine() - 1;
+    int column = token.getCharPositionInLine();
+    int length = token.getText().replaceAll("\\s+$", "").length();
+    Location location =
+        extendedDocument.mapLocation(
+            new Range(new Position(line, column), new Position(line, column + length)));
+    List<String> lines = location == null ? null : sourceLines(location.getUri());
+    Range range = location == null ? null : location.getRange();
+    if (lines == null || range.getStart().getLine() >= lines.size()) return token.getText();
+    String text = lines.get(range.getStart().getLine());
+    int end =
+        range.getEnd().getLine() == range.getStart().getLine()
+            ? Math.min(range.getEnd().getCharacter(), text.length())
+            : text.length();
+    int from = Math.min(range.getStart().getCharacter(), end);
+    return text.substring(from, end).trim();
+  }
+
+  private List<String> sourceLines(String uri) {
+    return sourceLines.computeIfAbsent(
+        uri,
+        key -> {
+          try {
+            if (key.equals(extendedDocument.getUri()))
+              return Arrays.asList(extendedDocument.getOriginalText().split("\\r?\\n", -1));
+            return java.nio.file.Files.readAllLines(
+                java.nio.file.Paths.get(java.net.URI.create(key)),
+                java.nio.charset.StandardCharsets.ISO_8859_1);
+          } catch (Exception e) {
+            return null;
+          }
+        });
   }
 
   @Override

@@ -10,6 +10,7 @@
  * Contributors:
  *    Amp - test embedded statement resource metadata
  *    Amp - test SQL columns, values, INTO host variables and WHERE condition
+ *    Amp - test that SQL syntax keeps columns, predicates and host variable roles
  */
 package org.eclipse.lsp.cobol.usecases;
 
@@ -18,9 +19,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
+import org.eclipse.lsp.cobol.common.model.tree.Syntax;
 import org.eclipse.lsp.cobol.implicitDialects.cics.CICSLexer;
 import org.eclipse.lsp.cobol.implicitDialects.cics.CICSParser;
 import org.eclipse.lsp.cobol.implicitDialects.cics.nodes.ExecCicsNode;
@@ -165,6 +171,44 @@ class TestExecResourceMetadata {
     assertEquals(
         Arrays.asList("ACCT_ID CHAR(11) NOT NULL", "BALANCE DECIMAL(12, 2)", "OPENED DATE NOT NULL WITH DEFAULT"),
         declared.getTableColumns());
+  }
+
+  @Test
+  void sqlSyntaxKeepsColumnsPredicatesAndHostVariableRoles() {
+    ExecSqlNode select =
+        sql(
+            "SELECT TR_TYPE, TR_DESCRIPTION INTO :WS-TYPE, :WS-DESC FROM CARDDEMO.TRANSACTION_TYPE"
+                + " WHERE TR_TYPE >= :WS-KEY ORDER BY TR_TYPE DESC FETCH FIRST 1 ROW ONLY");
+    List<String> tokens = new ArrayList<>();
+    Map<String, String> roles = new HashMap<>();
+    walk(select.getSyntax(), "", tokens, roles);
+    assertEquals(
+        "SELECT TR_TYPE , TR_DESCRIPTION INTO : WS-TYPE , : WS-DESC FROM CARDDEMO . TRANSACTION_TYPE"
+            + " WHERE TR_TYPE >= : WS-KEY ORDER BY TR_TYPE DESC FETCH FIRST 1 ROW ONLY",
+        String.join(" ", tokens));
+    assertTrue(roles.get("WS-TYPE").contains("/target_variable_names_loop/"), roles.get("WS-TYPE"));
+    assertTrue(roles.get("WS-DESC").contains("/target_variable_names_loop/"), roles.get("WS-DESC"));
+    assertFalse(roles.get("WS-KEY").contains("/target_variable_names_loop/"), roles.get("WS-KEY"));
+    assertTrue(roles.get("WS-KEY").contains("/dbs_where_clause/"), roles.get("WS-KEY"));
+    assertTrue(roles.get("DESC").endsWith("/dbs_orderby_clause"), roles.get("DESC"));
+  }
+
+  /** Collects every token in order, and for each the rules it is nested in. */
+  private static void walk(
+      Syntax syntax, String path, List<String> tokens, Map<String, String> roles) {
+    String here = path + "/" + syntax.getRule() + (syntax.getKind() == null ? "" : "~" + syntax.getKind());
+    if (syntax.getText() != null) {
+      tokens.add(syntax.getText().trim());
+      roles.put(syntax.getText().trim(), here);
+      return;
+    }
+    for (Object item : syntax.getItems()) {
+      if (item instanceof Syntax) walk((Syntax) item, here, tokens, roles);
+      else {
+        tokens.add(((String) item).trim());
+        roles.put(((String) item).trim(), here);
+      }
+    }
   }
 
   private ExecSqlNode sql(String source) {
