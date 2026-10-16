@@ -132,7 +132,7 @@ mfmap facts --root . > facts.json   # programs, calls, data access, files, commi
 
 These read the store's latest run; pass a folder of graph files instead to read those.
 `crosscheck` counts CALL, PERFORM, EXEC CICS, EXEC SQL, EXEC SQL CALL and EXEC DLI with a text
-scan that does not use the parser (a CALL inside EXEC SQL is counted as an SQL CALL only), and lists every program where the two counts differ. Read both sides of a
+scan that does not use the parser (a CALL inside EXEC SQL is counted as an SQL CALL only), and lists every program where the two counts differ. Without `-cf`, it expands COPY statements from the copybook folders the store's last parse used. Read both sides of a
 difference before trusting either one.
 
 ## Use the model

@@ -105,6 +105,11 @@ class StoreTest(unittest.TestCase):
         self.assertIn("SAMPLE", [p["name"] for p in facts["programs"]])
         self.assertIn("relationships", facts)
         self.assertRegex(run("crosscheck", str(self.store), "-cf", str(self.src / "cpy")), r"(?m)^CALL\s+\d+\s+\d+$")
+        # Without -cf, crosscheck expands COPY from the folders the parse used: a PERFORM added to
+        # the copybook after the parse shows up as a text-only difference.
+        with open(self.src / "cpy" / "SAMPREC.cpy", "a") as f:
+            f.write("           PERFORM 1000-READ\n")
+        self.assertIn("PERFORM text", run("crosscheck", str(self.store)))
 
     def test_programs_sharing_a_program_id_are_both_kept(self):
         # Every fake parse returns PROGRAM-ID SAMPLE, so SAMPCOPY.cbl copies it under another file name.

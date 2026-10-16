@@ -32,6 +32,20 @@ def where(location, root: str) -> str:
     return f"{os.path.relpath(location.path, root)}:{location.line}"
 
 
+def last_parse_copybooks(store) -> tuple[list[str], list[str]]:
+    """The copybook folders and extensions the last mfmap parse used, so crosscheck expands the
+    same COPY statements the parser did."""
+    import sqlite3
+    conn = sqlite3.connect(Path(store) / "map.db")
+    try:
+        row = conn.execute("SELECT options FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    finally:
+        conn.close()
+    options = json.loads(row[0]) if row and row[0] else []
+    pairs = list(zip(options[::2], options[1::2]))
+    return [v for k, v in pairs if k == "-cf"], [v for k, v in pairs if k == "-ce"]
+
+
 def facts(project: Project, root: str, ddl=()) -> dict:
     """Programs, calls, data access, files, commit points and stored procedures as plain JSON,
     with file:line evidence. Stored procedures come from DDL files under ``root`` and ``ddl``."""
@@ -219,8 +233,10 @@ def main(argv=None) -> int:
 
     c = commands.add_parser("crosscheck", help="compare statement counts with a text scan")
     c.add_argument("graphs", nargs="?", default=STORE, help="store or folder of graph files")
-    c.add_argument("-cf", "--copybooks", action="append", default=[], help="copybook folder")
-    c.add_argument("-ce", "--copybook-extension", action="append", default=[], help="copybook extension")
+    c.add_argument("-cf", "--copybooks", action="append", default=[],
+                   help="copybook folder; default: the folders the last parse of the store used")
+    c.add_argument("-ce", "--copybook-extension", action="append", default=[],
+                   help="copybook extension; default: the last parse's, or .cpy")
 
     m = commands.add_parser("fetch-mq-copybooks", help="download IBM MQ's COBOL copybooks")
     m.add_argument("--out", required=True, help="folder for the copybooks; pass it to parse with -cf")
@@ -326,8 +342,10 @@ def main(argv=None) -> int:
     if args.command == "summary":
         print(summary(project))
     elif args.command == "crosscheck":
-        extensions = args.copybook_extension or [".cpy"]
-        scan = TextScan(args.copybooks, ["", *extensions])
+        copybooks, extensions = args.copybooks, args.copybook_extension
+        if not copybooks and (Path(args.graphs) / "map.db").is_file():
+            copybooks, extensions = last_parse_copybooks(args.graphs)
+        scan = TextScan(copybooks, ["", *(extensions or [".cpy"])])
         text, counted, differences = crosscheck(project, scan)
         print(f"{'':10} {'text':>6} {'graph':>6}")
         for key in PATTERNS:
