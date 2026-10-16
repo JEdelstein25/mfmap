@@ -41,7 +41,8 @@ class StoreTest(unittest.TestCase):
 
     def fake_parse(self, jar, source, target, options=(), **kwargs):
         self.parsed.append(source.name)
-        text = (FIXTURES / "SAMPLE.json").read_text().replace("/FIXTURE", str(self.src))
+        graph = FIXTURES / f"{Path(source).stem}.json"
+        text = (graph if graph.is_file() else FIXTURES / "SAMPLE.json").read_text().replace("/FIXTURE", str(self.src))
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
         return text
@@ -53,14 +54,14 @@ class StoreTest(unittest.TestCase):
         by_path = {json.loads(line)["uri"].removeprefix("file:"): line for line in lines}
         return [(str(f), by_path[str(f)]) for f in files if str(f) in by_path]
 
-    def parse(self, *copybook_dirs):
+    def parse(self, *copybook_dirs, programs=("SAMPLE",)):
         self.parsed = []
         cwd = os.getcwd()
         os.chdir(self.src)  # the parse root, as when run from the application's repository
         self.addCleanup(os.chdir, cwd)
         with mock.patch.object(store, "parse_one", self.fake_parse), \
                 mock.patch.object(store, "read_ddl", self.fake_read_ddl):
-            return store.parse(self.store, self.jar, [self.src / "SAMPLE.cbl"],
+            return store.parse(self.store, self.jar, [self.src / f"{name}.cbl" for name in programs],
                                copybook_dirs or [self.src / "cpy"], jobs=1)
 
     def db(self):
@@ -227,7 +228,7 @@ class StoreTest(unittest.TestCase):
         self.assertIsNone(source(self.store, str(self.jar), 1))
 
     def test_resolvers_connect_transactions_screens_jobs_and_datasets(self):
-        self.parse()  # runs every resolver at the end
+        self.parse(programs=("SAMPLE", "ONLINE"))  # runs every resolver at the end
         resolvers.record(self.store, "business-logic", "paragraph:SAMPLE.1000-READ",
                          note="Copies each account to the report", evidence=f"{self.src}/SAMPLE.cbl:46")
         resolvers.run(self.store)  # running again keeps what the agent recorded
@@ -250,6 +251,18 @@ class StoreTest(unittest.TestCase):
             ("calls", "program:SAMPLE", "program:SAMPUTIL"),
             ("transfers", "program:SAMPLE", None),
             ("includes", "program:SAMPLE", "copybook:SAMPREC"),
+            # PERFORM chains continue into called programs.
+            ("invokes", "paragraph:SAMPLE.0000-MAIN", "program:SAMPUTIL"),
+            # CSD: the online file's dataset is the one the batch job reads; plans; TD queues.
+            ("stored-in", "vsam:ACCTFIL", "dataset:PROD.SAMPLE.ACCOUNTS"),
+            ("uses-plan", "transaction:SAMP", "plan:SAMPPLN"),
+            # IMS: DBD segments and datasets, PSB databases, programs' PSBs, GSAM output.
+            ("contains", "database:SAMPDBD", "ims:PAUTDTL1"),
+            ("uses", "psb:SAMPPSB", "database:SAMPGSAM"),
+            ("uses", "program:ONLINE", "psb:SAMPPSB"),
+            ("uses", "program:SAMPLE", "psb:SAMPPSB"),
+            ("stored-in", "database:SAMPDBD", "dataset:PROD.SAMPLE.IMSDB"),
+            ("write", "program:SAMPLE", "dataset:PROD.SAMPLE.UNLOAD"),
             # Schedulers: Control-M folders and conditions, CA-7 triggers.
             ("schedules", "schedule:DAILY-Sample", "job:SAMPJOB"),
             ("precedes", "job:SAMPJOB", "job:SAMPIMS"),
@@ -273,8 +286,18 @@ class StoreTest(unittest.TestCase):
             ("runs", "job:SAMPEZTJ", "program:SAMPEZT"),
             ("read", "program:SAMPEZT", "dataset:PROD.SAMPLE.OLDMAST"),
             ("read-write", "program:SAMPEZT", "dataset:PROD.SAMPLE.NEWMAST"),
+            # Ways in: terminal users, an MQ service, a script that submits jobs, JCL a program submits.
+            ("starts", "interface:3270", "transaction:SAMP"),
+            ("serves", "api:ONLINE", "program:ONLINE"),
+            ("submits", "script:nightly.sh", "job:SAMPJOB"),
+            ("submits", "program:ONLINE", "job:SAMPRPT"),
+            ("runs", "job:SAMPRPT", "proc:SAMPPROC"),
         ]:
             self.assertIn(expected, rows)
+        menu = next(r for r in conn.execute("SELECT * FROM relationships WHERE kind = 'invokes' AND source LIKE '%ONLINE%' AND target IS NULL"))
+        self.assertEqual((menu["source"], menu["note"]), ("paragraph:ONLINE.0000-MAIN", "XCTL, maybe SAMPACCT, SAMPRPT"))
+        include = next(r for r in conn.execute("SELECT * FROM relationships WHERE kind = 'includes'"))
+        self.assertEqual(include["line"], 21)
         self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)
         self.assertNotIn(("runs", "job:SAMPIMS", "program:DFSRRC00"), rows)
         self.assertNotIn(("calls", "page:web/page.html", "api:GET /accounts/{id}/x"), rows)

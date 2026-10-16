@@ -13,7 +13,8 @@ batch programs are, count as run by that step, as do IMS programs run through th
 (DFSRRC00 with ``PARM='DLI|DBB|BMP,program,psb'``) and Easytrieve programs run by EZTPA00 from the
 library member in SYSIN. Batch file reads and writes that resolvers named before this one record
 (``program:X`` to ``file:DD``) are matched the same way. Symbolic parameters (``&NAME``) are kept
-as written.
+as written. A program that holds a job's JCL in quoted literals (to write to the internal reader)
+``submits`` that job, and the job runs the procedures and programs its literal EXEC statements name.
 """
 
 from __future__ import annotations
@@ -34,6 +35,8 @@ RUN_PROGRAM = re.compile(r"\bRUN\s+PROGRAM\s*\(\s*([\w#@$]+)\s*\)", re.I)
 TSO_BATCH = {"IKJEFT01", "IKJEFT1A", "IKJEFT1B"}
 EASYTRIEVE = {"EZTPA00"}
 MEMBER = re.compile(r"\(([\w#@$]+)\)$")
+EMBEDDED_JOB = re.compile(r"""["']//([\w#@$]+)\s+JOB\b""", re.I)
+EMBEDDED_EXEC = re.compile(r"""["']//[\w#@$]*\s+EXEC\s+(?:(PGM)=|PROC=)?([\w#@$]+)""", re.I)
 IMS_REGION = re.compile(r"\bPARM=\(?'?\s*(DLI|DBB|BMP)\s*,\s*([\w#@$]+)\s*(?:,\s*([\w#@$]+))?", re.I)
 
 
@@ -128,7 +131,10 @@ def resolve(ctx: Context) -> Iterator[Fact]:
                               "AND source LIKE 'program:%' AND target LIKE 'file:%'"):
         access[(r["source"].split(":", 1)[1], r["target"].split(":", 1)[1].upper())].add(r["kind"])
 
+    programs = {p.file.path: p.name for p in ctx.project.programs.values()}
     for path, text in ctx.files():
+        if str(path) in programs and EMBEDDED_JOB.search(text):
+            yield from embedded(programs[str(path)], path, text)
         if not JCL_LINE.search(text):
             continue
         for step in steps(path, text):
@@ -151,3 +157,18 @@ def resolve(ctx: Context) -> Iterator[Fact]:
                     mode = next(iter(modes)) if len(modes) == 1 else "read-write"
                     yield Relationship(mode, f"program:{step['program']}", f"dataset:{dsn}", "declared", dd, note,
                                        str(path), line)
+
+
+def embedded(program: str, path, text: str) -> Iterator[Fact]:
+    """Jobs whose JCL a program holds in quoted literals, and what their EXEC statements run."""
+    job = None
+    for number, line in enumerate(text.splitlines(), 1):
+        if m := EMBEDDED_JOB.search(line):
+            job = f"job:{m.group(1).upper()}"
+            yield Entity(job, "defined", f"JCL built by {program}", str(path), number)
+            yield Relationship("submits", f"program:{program}", job, note="JCL in program literals",
+                               path=str(path), line=number)
+        elif job and (m := EMBEDDED_EXEC.search(line)):
+            kind = "program" if m.group(1) else "proc"
+            yield Relationship("runs", job, f"{kind}:{m.group(2).upper()}", note="JCL in program literals",
+                               path=str(path), line=number)

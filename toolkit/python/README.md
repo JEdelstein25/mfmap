@@ -200,14 +200,17 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
   B); `handles` to the paragraph an EXEC CICS HANDLE ABEND or HANDLE CONDITION names; CICS screens
   sent and received; and transactions started or returned to. Follow `enters`, `performs`,
   `goes-to`, `falls-through` and `invokes` to trace control from a program into the programs it
-  calls.
+  calls. An XCTL or CALL through a menu table (an OCCURS item over FILLER VALUEs) lists the
+  table's programs as candidates, and an unresolved SEND MAP notes the maps moved into its name.
 - `cics`: transactions and the programs they start, from CSD `DEFINE` statements, and screens from
-  BMS map source.
+  BMS map source; the dataset each CICS file opens (`vsam:FILE` `stored-in` `dataset:DSN`), the Db2
+  plan of each transaction (`DB2TRAN` and `DB2ENTRY`), and transient data queues.
 - `jcl`: which job or procedure runs which program in each step (including programs run through
   TSO batch with `RUN PROGRAM` and IMS programs run through `DFSRRC00` with
   `PARM='DLI|DBB|BMP,program,psb'`, and Easytrieve programs run by `EZTPA00` from the member in
   `SYSIN`), the datasets their DD statements name, and each program's batch file reads and writes
-  matched to those datasets through its `ASSIGN` names (or Easytrieve `FILE` names).
+  matched to those datasets through its `ASSIGN` names (or Easytrieve `FILE` names). A program
+  holding a job's JCL in literals `submits` that job.
 - `ddl`: Db2 tables with their columns (`column:TABLE.COLUMN`), primary keys, foreign keys
   (`references`), indexes and views (`selects-from`), from the parser's `ddl` command on the DDL
   files under the current folder and `--ddl` paths, and on any other text file, such as a DSNTIAD
@@ -224,6 +227,10 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
   through a JavaScript client (`page:path`).
 - `easytrieve`: Easytrieve Plus programs (`.ezt`), the files they read and write by `FILE` name
   (the DD name), the reports they print, the macros they include and the programs they call.
+- `ims`: databases and their segments and DD names from DBD source, the databases each PSB uses, the
+  PSB each program schedules or runs with, and GSAM reads and writes matched to job DD statements.
+- `interfaces`: ways in: `interface:3270` starts transactions whose programs send screens,
+  `api:PROGRAM` for programs serving MQ requests, and scripts that submit jobs to JES by FTP.
 
 Resolvers run in name order. To resolve something else, add a module to
 `mfmap/resolvers/` with a `NAME` and a `resolve(ctx)` function that yields `Entity` and

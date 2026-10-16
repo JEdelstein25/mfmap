@@ -104,8 +104,10 @@ def resolve(ctx: Context) -> Iterator[Fact]:
                 name, how = p.resolve(s.option("MAP"))
                 mapset, _ = p.resolve(s.option("MAPSET")) if s.option("MAPSET") else (name, how)
                 target = f"screen:{mapset}.{name}" if name and mapset else None
+                maybe = p.moved_values(s.option("MAP")) if not name and s.option("MAP") else []
                 yield Relationship("sends" if s.verb == "SEND" else "receives", f"program:{p.name}", target,
-                                   how if target else "unresolved", s.option("MAP") or "", **evidence)
+                                   how if target else "unresolved", s.option("MAP") or "",
+                                   f"maybe {', '.join(maybe)}" if maybe else None, **evidence)
             elif s.verb in ("RETURN", "START", "RUN") and s.option("TRANSID"):
                 name, how = p.resolve(s.option("TRANSID"))
                 yield Relationship("returns-to" if s.verb == "RETURN" else "starts", f"program:{p.name}",

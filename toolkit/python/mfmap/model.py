@@ -360,6 +360,11 @@ class Program:
     def copybooks(self) -> list[str]:
         return [n.name for n in self._own() if n.kind == "CopyNode"]
 
+    @property
+    def copy_statements(self) -> list[tuple[str, Optional[Location]]]:
+        """Each COPY statement: the copybook name and where the COPY is written."""
+        return [(n.name, n.location) for n in self._own() if n.kind == "CopyNode"]
+
     def resolve(self, text: Optional[str]) -> tuple[Optional[str], str]:
         """Resolve a program or resource name: a literal, a data item with a literal VALUE, or
         unresolved. Returns (name, how) where how is "literal", "value" or "unresolved"."""
@@ -383,7 +388,74 @@ class Program:
                 value, _ = self.resolve(source)
                 if value and value not in values:
                     values.append(value)
-        return values
+        return values + [v for v in self.table_values(name) if v not in values]
+
+    def table_values(self, text: str) -> list[str]:
+        """For a subscripted item such as ``OPT-PGMNAME(WS-OPTION)`` in an OCCURS table that
+        REDEFINES a group of FILLERs with VALUEs (a menu or code table): the non-blank value of the
+        item in each entry. Only DISPLAY items are laid out; anything else gives []."""
+        match = re.match(r"([\w-]+)\s*\(", text or "")
+        item = self.data_item(match.group(1)) if match else None
+        table = next((a for a in ([item.parent] if item else []) + (item.parent.ancestors() if item and item.parent else [])
+                      if a and a.occurs), None) if item else None
+        overlay = next((a for a in [table, *table.ancestors()] if a.redefines), None) if table else None
+        if overlay is None:
+            return []
+        data = flat_values(overlay.redefines)
+        width, offset, start = display_size(table), offset_in(item, table), offset_in(table, overlay)
+        if data is None or width is None or offset is None or start is None:
+            return []
+        data, offset = data[start:], offset
+        size = display_size(item)
+        values = [data[i * width + offset:i * width + offset + size].strip() for i in range(table.occurs)]
+        return list(dict.fromkeys(v for v in values if v))
+
+
+def display_size(item: "DataItem") -> Optional[int]:
+    """Bytes of a DISPLAY item or group (times OCCURS for a table entry is not applied)."""
+    if item.children:
+        sizes = [display_size(c) * (c.occurs or 1) if display_size(c) is not None else None
+                 for c in item.children if c.level != 88]
+        return None if None in sizes else sum(sizes)
+    if not item.pic or (item.usage or "UNDEFINED").upper() not in ("UNDEFINED", "DISPLAY"):
+        return None
+    pic = re.sub(r"(.)\((\d+)\)", lambda m: m.group(1) * int(m.group(2)), item.pic.upper())
+    return sum(1 for ch in pic if ch not in "SVP")
+
+
+def offset_in(item: "DataItem", group: "DataItem") -> Optional[int]:
+    """Byte offset of ``item`` within ``group`` (an ancestor), or None when it cannot be laid out."""
+    if item is group:
+        return 0
+    parent = item.parent
+    if parent is None:
+        return None
+    before = 0
+    for sibling in parent.children:
+        if sibling.node is item.node:
+            break
+        if sibling.level == 88 or sibling.redefines:
+            continue
+        size = display_size(sibling)
+        if size is None:
+            return None
+        before += size * (sibling.occurs or 1)
+    rest = offset_in(parent, group)
+    return None if rest is None else rest + before
+
+
+def flat_values(group: "DataItem") -> Optional[str]:
+    """The bytes a group's VALUE clauses give it, or None when an item has no VALUE or no size."""
+    if not group.children:
+        size, value = display_size(group), group.value
+        if size is not None and value and re.fullmatch(r"\d+", value):
+            return value.zfill(size)[-size:]
+        value = literal(value)
+        if size is None or value is None:
+            return None
+        return value.ljust(size)[:size]
+    parts = [flat_values(c) for c in group.children if c.level != 88 and not c.redefines]
+    return None if None in parts else "".join(parts)
 
 
 def move_parts(s: "Statement") -> tuple[Optional[str], list[str]]:
@@ -452,6 +524,13 @@ class DataItem:
     @property
     def parent(self) -> Optional["DataItem"]:
         return next((self.program.item(a) for a in self.node.ancestors() if is_data_item(a)), None)
+
+    def ancestors(self) -> list["DataItem"]:
+        out, item = [], self.parent
+        while item is not None:
+            out.append(item)
+            item = item.parent
+        return out
 
     @property
     def children(self) -> list["DataItem"]:
