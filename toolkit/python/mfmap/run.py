@@ -21,11 +21,16 @@ SOURCE_EXTENSIONS = (".cbl", ".cob")
 
 
 def find_sources(paths: Iterable[str | os.PathLike], extensions=SOURCE_EXTENSIONS) -> list[Path]:
-    """Files under ``paths`` whose extension matches, case-insensitively, sorted."""
+    """Files named in ``paths``, whatever their extension, and files under folders in ``paths``
+    whose extension matches, case-insensitively; ``""`` matches files with no extension. Sorted."""
+    extensions = {e.lower() if not e or e.startswith(".") else "." + e.lower() for e in extensions}
     found = []
     for path in map(Path, paths):
-        candidates = [path] if path.is_file() else (p for p in path.rglob("*") if p.is_file())
-        found += [p for p in candidates if p.suffix.lower() in extensions]
+        if path.is_file():
+            found.append(path)
+        else:
+            found += [p for p in path.rglob("*") if p.is_file() and p.suffix.lower() in extensions
+                      and not any(part.startswith(".") for part in p.relative_to(path).parts)]
     return sorted(set(found))
 
 

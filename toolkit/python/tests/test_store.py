@@ -8,6 +8,8 @@
 """Store and report tests. The parser is replaced by a copy of fixtures/SAMPLE.json whose
 /FIXTURE paths point at a temporary copy of the fixtures, so no Java is needed."""
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -17,6 +19,8 @@ from pathlib import Path
 from unittest import mock
 
 from mfmap import plan, questions, resolvers, store
+from mfmap.__main__ import main
+from mfmap.run import find_sources
 from mfmap.report import add_note, backlog, report, report_markdown
 from mfmap.serve import source
 
@@ -25,7 +29,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 class StoreTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        # Resolved, because on macOS the temporary folder is a symlink and the store resolves paths.
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp)
         self.src = self.tmp / "src"
         shutil.copytree(FIXTURES, self.src)
@@ -79,6 +84,29 @@ class StoreTest(unittest.TestCase):
         cached = conn.execute("SELECT cached FROM run_files WHERE run_id = ?", (second,)).fetchone()[0]
         self.assertEqual(cached, 1)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0], 6)
+
+    def test_facts_and_crosscheck_read_a_store(self):
+        self.parse()
+        def run(*command):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                main(list(command))
+            return out.getvalue()
+
+        facts = json.loads(run("facts", str(self.store), "--root", str(self.src)))
+        self.assertIn("SAMPLE", [p["name"] for p in facts["programs"]])
+        self.assertIn("relationships", facts)
+        self.assertRegex(run("crosscheck", str(self.store), "-cf", str(self.src / "cpy")), r"(?m)^CALL\s+\d+\s+\d+$")
+
+    def test_finds_named_files_and_members_without_extensions(self):
+        members = self.tmp / "members"
+        (members / ".old").mkdir(parents=True)
+        for name in ("PPCAL215", "PPDRV215", "README.txt", ".old/PPCAL200"):
+            (members / name).write_text("")
+        self.assertEqual([p.name for p in find_sources([members])], [])
+        self.assertEqual([p.name for p in find_sources([members], [""])], ["PPCAL215", "PPDRV215"])
+        self.assertEqual([p.name for p in find_sources([members / "PPCAL215"])], ["PPCAL215"])
+        self.assertEqual([p.name for p in find_sources([self.src])], ["SAMPLE.cbl"])
 
     def test_changed_copybook_or_folder_order_reparses(self):
         self.parse()

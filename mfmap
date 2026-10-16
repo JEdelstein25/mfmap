@@ -12,6 +12,11 @@
 dir=$(cd "$(dirname "$0")" && pwd)
 jar="${MFMAP_JAR:-$dir/server/engine/target/server.jar}"
 build() {
+	if ! command -v java >/dev/null || ! command -v mvn >/dev/null; then
+		echo "mfmap: building the parser needs JDK 17 or later and Maven. Install them, for example with" \
+			"'sudo apt-get install -y openjdk-17-jdk-headless maven' or 'brew install openjdk@17 maven'." >&2
+		return 1
+	fi
 	echo "mfmap: building the parser; the first build downloads dependencies and takes a few minutes" >&2
 	(cd "$dir/server" && mvn -B -q --no-transfer-progress -Dmaven.test.skip -pl engine -am package) >&2
 }

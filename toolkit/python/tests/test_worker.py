@@ -33,7 +33,7 @@ FAKE = textwrap.dedent('''
 
 class WorkerTest(unittest.TestCase):
     def setUp(self):
-        directory = Path(tempfile.mkdtemp())
+        directory = Path(tempfile.mkdtemp()).resolve()
         self.fake = directory / "fake_server.py"
         self.fake.write_text(FAKE)
         self.dir = directory

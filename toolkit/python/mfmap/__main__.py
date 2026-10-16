@@ -16,11 +16,11 @@ import os
 import sys
 from pathlib import Path
 
-from . import mq, plan, questions, resolvers
+from . import bms, mq, plan, questions, resolvers
 from . import procedures as sp
 from .crosscheck import PATTERNS, TextScan, crosscheck
 from .model import Project, call_edges, commit_points, data_access
-from .run import find_sources
+from .run import SOURCE_EXTENSIONS, find_sources
 from .report import add_note, backlog, report, report_markdown
 from .serve import serve
 from .store import parse
@@ -152,6 +152,9 @@ def main(argv=None) -> int:
     p.add_argument("--store", default=STORE, help=f"store folder (default {STORE})")
     p.add_argument("-cf", "--copybooks", action="append", default=[], help="copybook folder")
     p.add_argument("-ce", "--copybook-extension", action="append", default=[], help="copybook extension")
+    p.add_argument("-se", "--source-extension", action="append", default=[],
+                   help="extension of programs in source folders (default .cbl and .cob); "
+                        "pass '' for members with no extension. Files named directly are always parsed")
     p.add_argument("-j", "--jobs", type=int, default=4)
     p.add_argument("--force", action="store_true", help="parse unchanged files again")
     p.add_argument("--ddl", action="append", default=[],
@@ -224,7 +227,16 @@ def main(argv=None) -> int:
     m.add_argument("--version", help="MQ redistributable client version; default: the newest")
     m.add_argument("--accept-license", action="store_true", help="accept IBM's MQ license terms")
 
+    bm = commands.add_parser("bms-copybooks", help="write COBOL symbolic map copybooks from BMS source")
+    bm.add_argument("sources", nargs="+", help=".bms files or folders")
+    bm.add_argument("--out", required=True,
+                    help="folder for the copybooks, outside the application source; pass it to parse with -cf")
+
     args = parser.parse_args(argv)
+    if args.command == "bms-copybooks":
+        written = bms.write(args.sources, args.out)
+        print(f"wrote {len(written)} symbolic map copybooks to {args.out}; add -cf {args.out} when parsing")
+        return 0
     if args.command == "fetch-mq-copybooks":
         if not args.accept_license:
             print("The MQ copybooks are IBM's and are licensed under the IBM MQ license terms "
@@ -239,7 +251,7 @@ def main(argv=None) -> int:
     if args.command == "parse":
         if not args.jar:
             parser.error("--jar or $MFMAP_JAR is required")
-        sources = find_sources(args.sources)
+        sources = find_sources(args.sources, args.source_extension or SOURCE_EXTENSIONS)
         statuses = collections.Counter()
 
         def progress(path: str, status: str) -> None:
@@ -316,10 +328,10 @@ def main(argv=None) -> int:
     elif args.command == "crosscheck":
         extensions = args.copybook_extension or [".cpy"]
         scan = TextScan(args.copybooks, ["", *extensions])
-        text, graph, differences = crosscheck(project, scan)
+        text, counted, differences = crosscheck(project, scan)
         print(f"{'':10} {'text':>6} {'graph':>6}")
         for key in PATTERNS:
-            print(f"{key:10} {text[key]:6d} {graph[key]:6d}")
+            print(f"{key:10} {text[key]:6d} {counted[key]:6d}")
         for name, diff in differences.items():
             print(f"{name}: " + ", ".join(f"{k} text {t} graph {g}" for k, (t, g) in diff.items()))
         return 0 if not differences else 1
