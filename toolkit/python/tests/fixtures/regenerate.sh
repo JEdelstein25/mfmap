@@ -1,5 +1,5 @@
 #!/bin/sh
-# Regenerate SAMPLE.json, DDL.jsonl, DLICALL.json, MQCALL.json and ONLINE.json with the fork's jar. Absolute paths are replaced by /FIXTURE so the
+# Regenerate SAMPLE.json, DDL.jsonl, DLICALL.json, MQCALL.json, ONLINE.json and SAMPUTIL.json with the fork's jar. Absolute paths are replaced by /FIXTURE so the
 # fixture does not depend on where the repository is checked out.
 # Usage: MFMAP_JAR=/path/to/server.jar sh regenerate.sh
 set -eu
@@ -15,3 +15,5 @@ java -jar "$MFMAP_JAR" analysis -s "$dir/DLICALL.cbl" --graph | sed "s|$dir|/FIX
 java -jar "$MFMAP_JAR" analysis -s "$dir/MQCALL.cbl" --graph | sed "s|$dir|/FIXTURE|g" > MQCALL.json
 # A CICS program that serves MQ requests, sends maps and submits JCL.
 java -jar "$MFMAP_JAR" analysis -s "$dir/ONLINE.cbl" -cf "$dir/cpy" --graph | sed "s|$dir|/FIXTURE|g" > ONLINE.json
+# A subprogram SAMPLE calls, whose files are the caller's DDs.
+java -jar "$MFMAP_JAR" analysis -s "$dir/SAMPUTIL.cbl" -cf "$dir/cpy" --graph | sed "s|$dir|/FIXTURE|g" > SAMPUTIL.json

@@ -209,8 +209,8 @@ Endpoints are written `type:name`, such as `program:ACCTUPD`, `transaction:AUPD`
   TSO batch with `RUN PROGRAM` and IMS programs run through `DFSRRC00` with
   `PARM='DLI|DBB|BMP,program,psb'`, and Easytrieve programs run by `EZTPA00` from the member in
   `SYSIN`), the datasets their DD statements name, and each program's batch file reads and writes
-  matched to those datasets through its `ASSIGN` names (or Easytrieve `FILE` names). A program
-  holding a job's JCL in literals `submits` that job.
+  matched to those datasets through its `ASSIGN` names (or Easytrieve `FILE` names), also for the
+  programs it CALLs. A program holding a job's JCL in literals `submits` that job.
 - `ddl`: Db2 tables with their columns (`column:TABLE.COLUMN`), primary keys, foreign keys
   (`references`), indexes and views (`selects-from`), from the parser's `ddl` command on the DDL
   files under the current folder and `--ddl` paths, and on any other text file, such as a DSNTIAD

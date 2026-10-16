@@ -7,8 +7,8 @@
 # SPDX-License-Identifier: EPL-2.0
 """Batch jobs from JCL and procedures: which job or procedure runs which program in each step, and
 which dataset each DD statement names. A program's batch file access (its SELECT ... ASSIGN name)
-is matched to the DD statement with that name in the steps that run it, giving reads and writes of
-datasets. Programs run through TSO batch (IKJEFT01 with ``RUN PROGRAM(...)`` in SYSTSIN), as Db2
+is matched to the DD statement with that name in the steps that run it, or that run a program
+calling it, giving reads and writes of datasets. Programs run through TSO batch (IKJEFT01 with ``RUN PROGRAM(...)`` in SYSTSIN), as Db2
 batch programs are, count as run by that step, as do IMS programs run through the region controller
 (DFSRRC00 with ``PARM='DLI|DBB|BMP,program,psb'``) and Easytrieve programs run by EZTPA00 from the
 library member in SYSIN. Batch file reads and writes that resolvers named before this one record
@@ -131,6 +131,20 @@ def resolve(ctx: Context) -> Iterator[Fact]:
                               "AND source LIKE 'program:%' AND target LIKE 'file:%'"):
         access[(r["source"].split(":", 1)[1], r["target"].split(":", 1)[1].upper())].add(r["kind"])
 
+    # Programs a step's program CALLs (statically, at any depth) use the step's DD statements too.
+    callees = collections.defaultdict(set)
+    for c in ctx.conn.execute("SELECT program, target FROM calls WHERE via = 'CALL' AND target IS NOT NULL"):
+        callees[c["program"]].add(c["target"])
+
+    def with_callees(program):
+        seen, todo = [], [program]
+        while todo:
+            p = todo.pop()
+            if p not in seen:
+                seen.append(p)
+                todo.extend(sorted(callees[p]))
+        return seen
+
     programs = {p.file.path: p.name for p in ctx.project.programs.values()}
     for path, text in ctx.files():
         if str(path) in programs and EMBEDDED_JOB.search(text):
@@ -152,11 +166,13 @@ def resolve(ctx: Context) -> Iterator[Fact]:
             for dd, dsn, line in step["dds"]:
                 note = f"DD {dd} in {where_step}"
                 yield Relationship("names", owner, f"dataset:{dsn}", note=note, path=str(path), line=line)
-                modes = access.get((step["program"], dd)) if step["program"] else None
-                if modes:
-                    mode = next(iter(modes)) if len(modes) == 1 else "read-write"
-                    yield Relationship(mode, f"program:{step['program']}", f"dataset:{dsn}", "declared", dd, note,
-                                       str(path), line)
+                for program in with_callees(step["program"]) if step["program"] else []:
+                    modes = access.get((program, dd))
+                    if modes:
+                        mode = next(iter(modes)) if len(modes) == 1 else "read-write"
+                        called = "" if program == step["program"] else f", called by {step['program']}"
+                        yield Relationship(mode, f"program:{program}", f"dataset:{dsn}", "declared", dd,
+                                           note + called, str(path), line)
 
 
 def embedded(program: str, path, text: str) -> Iterator[Fact]:

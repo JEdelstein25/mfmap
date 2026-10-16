@@ -33,7 +33,7 @@ class StoreTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.tmp)
         self.src = self.tmp / "src"
-        shutil.copytree(FIXTURES, self.src, ignore=shutil.ignore_patterns("DLICALL.*"))  # one program, SAMPLE
+        shutil.copytree(FIXTURES, self.src, ignore=shutil.ignore_patterns("DLICALL.*"))
         self.jar = self.tmp / "server.jar"
         self.jar.write_bytes(b"jar")
         self.store = self.tmp / ".mfmap"
@@ -154,7 +154,8 @@ class StoreTest(unittest.TestCase):
         self.assertEqual([p.name for p in find_sources([members])], [])
         self.assertEqual([p.name for p in find_sources([members], [""])], ["PPCAL215", "PPDRV215"])
         self.assertEqual([p.name for p in find_sources([members / "PPCAL215"])], ["PPCAL215"])
-        self.assertEqual([p.name for p in find_sources([self.src])], ["SAMPLE.cbl"])
+        self.assertEqual([p.name for p in find_sources([self.src])],
+                         ["MQCALL.cbl", "ONLINE.cbl", "SAMPLE.cbl", "SAMPUTIL.cbl"])
 
     def test_changed_copybook_or_folder_order_reparses(self):
         self.parse()
@@ -228,7 +229,7 @@ class StoreTest(unittest.TestCase):
         self.assertIsNone(source(self.store, str(self.jar), 1))
 
     def test_resolvers_connect_transactions_screens_jobs_and_datasets(self):
-        self.parse(programs=("SAMPLE", "ONLINE"))  # runs every resolver at the end
+        self.parse(programs=("SAMPLE", "ONLINE", "SAMPUTIL"))  # runs every resolver at the end
         resolvers.record(self.store, "business-logic", "paragraph:SAMPLE.1000-READ",
                          note="Copies each account to the report", evidence=f"{self.src}/SAMPLE.cbl:46")
         resolvers.run(self.store)  # running again keeps what the agent recorded
@@ -247,6 +248,8 @@ class StoreTest(unittest.TestCase):
             # SELECT ... ASSIGN names matched to the DD statements of the step that runs the program.
             ("read", "program:SAMPLE", "dataset:PROD.SAMPLE.ACCOUNTS"),
             ("write", "program:SAMPLE", "dataset:PROD.SAMPLE.REPORT(+1)"),
+            # A program SAMPLE calls reads through the DD of the step that runs SAMPLE.
+            ("read", "program:SAMPUTIL", "dataset:PROD.SAMPLE.RATES"),
             ("performs", "paragraph:SAMPLE.0000-MAIN", "paragraph:SAMPLE.1000-READ"),
             ("calls", "program:SAMPLE", "program:SAMPUTIL"),
             ("transfers", "program:SAMPLE", None),
@@ -295,8 +298,8 @@ class StoreTest(unittest.TestCase):
         ]:
             self.assertIn(expected, rows)
         menu = next(r for r in conn.execute("SELECT * FROM relationships WHERE kind = 'invokes' AND source LIKE '%ONLINE%' AND target IS NULL"))
-        self.assertEqual((menu["source"], menu["note"]), ("paragraph:ONLINE.0000-MAIN", "XCTL, maybe SAMPACCT, SAMPRPT"))
-        include = next(r for r in conn.execute("SELECT * FROM relationships WHERE kind = 'includes'"))
+        self.assertEqual((menu["source"], menu["note"]), ("paragraph:ONLINE.0000-MAIN", "maybe SAMPACCT, SAMPRPT"))
+        include = next(r for r in conn.execute("SELECT * FROM relationships WHERE kind = 'includes' AND source = 'program:SAMPLE'"))
         self.assertEqual(include["line"], 21)
         self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)
         self.assertNotIn(("runs", "job:SAMPIMS", "program:DFSRRC00"), rows)
