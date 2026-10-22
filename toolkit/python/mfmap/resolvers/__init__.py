@@ -30,6 +30,9 @@ AGENT = "agent"
 SKIP_DIRS = {"node_modules", "target", "build", "dist", "__pycache__"}
 BINARY = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".jar", ".class", ".gz", ".tar", ".ico",
           ".xlsx", ".docx", ".pyc", ".so", ".dll", ".exe", ".bin", ".db"}
+# Text that quotes sources without being one: patches and documentation (such as a unit's notes
+# with a DBD copied into an appendix) would otherwise add their quoted definitions to the map.
+QUOTING = {".patch", ".diff", ".md"}
 
 
 @dataclass(frozen=True)
@@ -80,7 +83,7 @@ class Context:
             dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS)
             for name in sorted(filenames):
                 path = Path(dirpath) / name
-                if path.suffix.lower() in BINARY or not accept(path):
+                if path.suffix.lower() in BINARY | QUOTING or not accept(path):
                     continue
                 try:
                     if path.stat().st_size > 4_000_000:

@@ -229,6 +229,9 @@ class StoreTest(unittest.TestCase):
         self.assertIsNone(source(self.store, str(self.jar), 1))
 
     def test_resolvers_connect_transactions_screens_jobs_and_datasets(self):
+        # Notes and patches that quote a DBD are not sources.
+        for name in ("notes.md", "fix.patch"):
+            (self.src / name).write_text((FIXTURES / "ims" / "SAMPDBD.dbd").read_text().replace("SAMPDBD", "QUOTED"))
         self.parse(programs=("SAMPLE", "ONLINE", "SAMPUTIL"))  # runs every resolver at the end
         resolvers.record(self.store, "business-logic", "paragraph:SAMPLE.1000-READ",
                          note="Copies each account to the report", evidence=f"{self.src}/SAMPLE.cbl:46")
@@ -301,6 +304,7 @@ class StoreTest(unittest.TestCase):
         self.assertEqual((menu["source"], menu["note"]), ("paragraph:ONLINE.0000-MAIN", "maybe SAMPACCT, SAMPRPT"))
         include = next(r for r in conn.execute("SELECT * FROM relationships WHERE kind = 'includes' AND source = 'program:SAMPLE'"))
         self.assertEqual(include["line"], 21)
+        self.assertFalse([r for r in rows if "QUOTED" in str(r)])
         self.assertNotIn(("runs", "job:SAMPJOB", "program:IKJEFT01"), rows)
         self.assertNotIn(("runs", "job:SAMPIMS", "program:DFSRRC00"), rows)
         self.assertNotIn(("calls", "page:web/page.html", "api:GET /accounts/{id}/x"), rows)
