@@ -53,11 +53,3 @@ export function poll(url, { interval = 4000, busy = 1500, isBusy = () => false }
 	state.refresh = tick
 	return state
 }
-
-// POSTs JSON and returns the JSON answer, or throws with the server's error.
-export async function post(url, body) {
-	const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-	const data = await res.json().catch(() => ({}))
-	if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-	return data
-}

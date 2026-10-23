@@ -71,8 +71,8 @@ viewer. It has four tabs:
 
 - **Notes** is for the people the migration depends on. It starts with **Open Questions**: what the
   source cannot answer, each with what the agent found, the default it is going ahead with and
-  what an answer would change. None of them block the work. Anyone with the page can type an answer;
-  the agent reads answers with `mfmap questions`. Questions and answers are kept in
+  what an answer would change, and the answer once there is one. None of them block the work.
+  Answer one with `mfmap answer`; the agent reads answers with `mfmap questions`. Questions and answers are kept in
   `.mfmap/questions.json`. Below them are the **Agent Notes** from `.mfmap/notes.md`, which
   the agent (or anyone) adds to with `mfmap note` or edits directly.
 - **Parser** shows how the map was built: the programs and the folder each copybook came from, the

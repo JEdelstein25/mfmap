@@ -6,7 +6,7 @@
 #
 # SPDX-License-Identifier: EPL-2.0
 """``mfmap serve``: the Notes, Parser, Backlog and Map tabs, refreshed while a parse runs or the notes
-change. Answers typed on the Notes tab are saved to the store's questions. The page is one Svelte
+change. The page is read-only: questions are answered with ``mfmap answer``. It is one Svelte
 app, prebuilt into ``static/app.js`` and ``app.css`` from ``toolkit/web``, so it needs no network;
 it reads ``/api/report``, ``/api/graph`` and ``/api/source``."""
 
@@ -21,7 +21,6 @@ from urllib.parse import parse_qs, urlparse
 
 from . import graph as graphs
 from . import plan as plans
-from . import questions
 from .report import plan_view, report
 from .store import connect
 
@@ -109,18 +108,6 @@ def make_handler(store: Path, plan: Optional[str]):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-
-        def do_POST(self):
-            if urlparse(self.path).path != "/api/answer":
-                self.send(404, b"not found", "text/plain")
-                return
-            try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-                saved = questions.answer(store, str(body["id"]), str(body.get("answer") or ""), "page")
-            except (ValueError, KeyError) as e:
-                self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
-                return
-            self.send(200, json.dumps(saved).encode(), "application/json")
 
     return Handler
 

@@ -17,11 +17,6 @@ SPDX-License-Identifier: EPL-2.0
 	const questions = $derived(report.data?.questions || [])
 	const open = $derived(questions.filter((q) => !q.answer))
 	const shown = $derived(filter === 'open' ? open : filter === 'answered' ? questions.filter((q) => q.answer) : [...open, ...questions.filter((q) => q.answer)])
-
-	// Show a saved answer now instead of at the next refresh.
-	function saved(q) {
-		report.data = { ...report.data, questions: report.data.questions.map((x) => (x.id === q.id ? q : x)) }
-	}
 </script>
 
 <Page title="Notes">
@@ -37,9 +32,9 @@ SPDX-License-Identifier: EPL-2.0
 			{/if}
 		{/snippet}
 		{#if questions.length}
-			<p class="intro">None of these block the work: the agent goes ahead with each default. Answer one to change the plan.</p>
+			<p class="intro">None of these block the work: the agent goes ahead with each default. Answer one with <code class="mf-code">mfmap answer</code> to change the plan.</p>
 			<div class="list">
-				{#each shown as q (q.id)}<Question {q} onsaved={saved} />{/each}
+				{#each shown as q (q.id)}<Question {q} />{/each}
 			</div>
 			{#if !shown.length}<Empty>No {filter} questions.</Empty>{/if}
 		{:else}
