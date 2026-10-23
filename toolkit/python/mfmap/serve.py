@@ -6,8 +6,9 @@
 #
 # SPDX-License-Identifier: EPL-2.0
 """``mfmap serve``: the Notes, Parser, Backlog and Map tabs, refreshed while a parse runs or the notes
-change. Answers typed on the Notes tab are saved to the store's questions. The Map tab's script and
-styles are the prebuilt bundle in ``static/`` (see ``toolkit/map``); the page needs no network."""
+change. Answers typed on the Notes tab are saved to the store's questions. The page is one Svelte
+app, prebuilt into ``static/app.js`` and ``app.css`` from ``toolkit/web``, so it needs no network;
+it reads ``/api/report``, ``/api/graph`` and ``/api/source``."""
 
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 from . import graph as graphs
 from . import plan as plans
 from . import questions
-from .report import backlog, report
+from .report import plan_view, report
 from .store import connect
 
 PAGE = Path(__file__).with_name("page.html")
@@ -73,7 +74,7 @@ def make_handler(store: Path, plan: Optional[str]):
             if url.path in ("/", "/index.html"):
                 self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             elif url.path == "/api/report":
-                body = {**report(store), "backlog": backlog(store, plan)}
+                body = {**report(store), "plan": plan_view(store, plan)}
                 self.send(200, json.dumps(body).encode(), "application/json")
             elif url.path == "/api/source":
                 found = source(store, query.get("path", ""), int(query.get("line") or "1"), plan=plan)

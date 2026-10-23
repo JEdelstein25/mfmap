@@ -26,7 +26,7 @@ from unittest import mock
 from mfmap import plan, questions, resolvers, store
 from mfmap.__main__ import main
 from mfmap.run import find_sources
-from mfmap.report import add_note, backlog, report, report_markdown
+from mfmap.report import add_note, backlog, plan_view, report, report_markdown
 from mfmap.serve import make_handler, source
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -226,6 +226,14 @@ class StoreTest(unittest.TestCase):
         # SAMPLE2 was never parsed, so the check flags it; U2 has no notes file yet.
         self.assertIn("program:SAMPLE2 is not in the map", full)
         self.assertIn("units/U2.md does not exist yet", full)
+        # The Backlog tab of mfmap serve gets the same plan as data: units in wave order, each with
+        # its own notes, the count by status and the check's findings.
+        view = plan_view(self.store)
+        self.assertEqual([(u["id"], u["status"]) for u in view["units"]], [("U1", "built"), ("U2", "building")])
+        self.assertIn("Rejects a zero amount", view["units"][0]["notes"])
+        self.assertEqual((view["units"][1]["notes"], view["units"][1]["notesPath"]), (None, None))
+        self.assertEqual(view["progress"], {"todo": 0, "building": 1, "built": 1, "verified": 0})
+        self.assertTrue(any("program:SAMPLE2 is not in the map" in e for e in view["errors"]))
 
         source_file = str(self.src / "SAMPLE.cbl")
         self.assertEqual(source(self.store, source_file, 40)["lines"][12].strip(),
@@ -562,7 +570,7 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(bare["groupings"], ["none"])
         self.assertEqual(sorted(n["id"] for n in bare["nodes"]), sorted(nodes_before))
         self.assertEqual(sorted((e["id"], e["count"]) for e in bare["edges"]), edges_before)
-        with urllib.request.urlopen(f"{base}/static/map.js") as r:
+        with urllib.request.urlopen(f"{base}/static/app.js") as r:
             self.assertGreater(len(r.read()), 1000)
 
 

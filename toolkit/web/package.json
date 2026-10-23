@@ -1,0 +1,21 @@
+{
+  "name": "mfmap-web",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The page of mfmap serve, built into toolkit/python/mfmap/static/app.js and app.css",
+  "license": "EPL-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "3.1.1",
+    "@xyflow/svelte": "1.7.0",
+    "roughjs": "4.6.6",
+    "svelte": "5.57.2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "vite": "8.3.5"
+  }
+}

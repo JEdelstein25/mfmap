@@ -66,7 +66,8 @@ mfmap questions        # every question, open ones first, with answers
 mfmap answer Q3 "Retired in 2019"   # an empty answer reopens it
 ```
 
-The page refreshes while a parse runs or the notes change. It has four tabs:
+The page refreshes while a parse runs or the notes change, and every file:line opens the source
+viewer. It has four tabs:
 
 - **Notes** is for the people the migration depends on. It starts with **Open Questions**: what the
   source cannot answer, each with what the agent found, the default it is going ahead with and
@@ -78,10 +79,12 @@ The page refreshes while a parse runs or the notes change. It has four tabs:
   copybooks the parser supplied or could not find, parse errors grouped by message, what the parser
   found (paragraphs, statements, data items, calls by how their targets were resolved, data access
   by kind of store, calls set at run time) and the count check against the text scan.
-- **Backlog** lists every unit in `migration.json` in wave order with its status, its threads
-  and its `units/<unit ID>.md` file, and any problems `mfmap check` finds. Above the waves are the
-  progress counts and the threads still working on a unit. The file is looked for in the
-  parse root and next to the store; `--plan` names another.
+- **Backlog** lists every unit in `migration.json` in wave order as a card with its status and
+  counts; open one for its programs, ways in, data, dependencies, interfaces, acceptance checks,
+  threads and `units/<unit ID>.md` notes, or open it on the Map. Above the waves are the progress
+  by status, any problems `mfmap check` finds, the threads still working on a unit, and a filter
+  by name and status. `#backlog/<unit ID>` opens one unit. The file is looked for in the parse root
+  and next to the store; `--plan` names another.
 - **Map** draws the store, `migration.json` and the open questions as a diagram, one level at a
   time, so it never draws the whole map:
   - **Estate** (`#map`): the resolved graph, with or without `migration.json`: programs and
@@ -104,7 +107,9 @@ The page refreshes while a parse runs or the notes change. It has four tabs:
   Double-click a card, use its panel or the search box to go down a level; the breadcrumbs go
   back up. Clicking a card or an edge opens a panel with its open questions, parse errors,
   unresolved calls and the file and line of every relationship it stands for; each opens the
-  source. The toggles show or hide the overlays (unit status, parse errors, unresolved calls, open
+  source, and a node in a unit links to its Backlog entry. Colour marks only what needs
+  attention (errors, unresolved calls and calls set at run time, questions) and data access; a
+  node's kind is its label (PGM, TX, JOB, VSAM...). The toggles show or hide the overlays (unit status, parse errors, unresolved calls, open
   questions) and switch to a hand-drawn style. Everything on the map comes from the store, the
   units in `migration.json` and the questions; it adds no scores or advice of its own. A CICS file
   and the dataset it is stored in are one store, as are the generations of a GDG. The page asks

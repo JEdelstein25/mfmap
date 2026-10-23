@@ -42,7 +42,7 @@ def plural(n: int, noun: str) -> str:
 
 def report(store: str | os.PathLike) -> dict:
     """The Notes and Parser tabs: open questions for a person, the agent's notes as Markdown, and
-    what the parser read and found as Markdown, with the latest run's status."""
+    what the parser read and found as Markdown, with the latest run's status and file counts."""
     store = Path(store).resolve()
     conn = connect(store)
     try:
@@ -73,6 +73,7 @@ def report(store: str | os.PathLike) -> dict:
              "_No notes yet. Add one with `mfmap note \"...\"` or edit "
              f"`{rel(str(path))}`._\n"]
     return {"root": root, "run": dict(run) if run else None, "questions": questions.load(store),
+            "files": {k: status[k] for k in ("clean", "errors", "crash")},
             "notes": "\n".join(notes), "parser": "\n".join(parser)}
 
 
@@ -333,3 +334,31 @@ def backlog(store: str | os.PathLike, explicit: Optional[str] = None) -> str:
         out.append("## Not Migrated\n")
         out += [f"- {endpoint(e['program'])}: {e['reason']}" for e in result.plan["excluded"]]
     return "\n".join(out)
+
+
+def plan_view(store: str | os.PathLike, explicit: Optional[str] = None) -> Optional[dict]:
+    """``migration.json`` for the Backlog tab of ``mfmap serve``: its units in wave order, each with
+    its ``units/<unit ID>.md`` notes, the count of units by status, and what ``mfmap check`` finds.
+    None when there is no plan; ``units`` is empty when the plan cannot be read."""
+    store = Path(store).resolve()
+    conn = connect(store)
+    try:
+        run = conn.execute("SELECT root FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        root = run["root"] if run else str(store.parent)
+        path = plan.find(store, root, explicit)
+        if not path:
+            return None
+        result = plan.check(path, conn)
+    finally:
+        conn.close()
+    units = []
+    for u in sorted((result.plan or {}).get("units", []), key=lambda u: u["wave"]):
+        notes = path.parent / "units" / f"{u['id']}.md"
+        units.append({**u, "status": u.get("status", "todo"),
+                      "notesPath": str(notes) if notes.is_file() else None,
+                      "notes": notes.read_text(encoding="utf-8") if notes.is_file() else None})
+    counts = collections.Counter(u["status"] for u in units)
+    return {"path": str(path), "target": (result.plan or {}).get("target"), "units": units,
+            "excluded": (result.plan or {}).get("excluded", []),
+            "progress": {s: counts[s] for s in plan.STATUSES},
+            "errors": result.errors, "warnings": result.warnings}
