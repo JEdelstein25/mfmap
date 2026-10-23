@@ -3,7 +3,7 @@
 mfmap is a modified version of Eclipse COBOL Language Support (Che4z LSP for COBOL), maintained by Amp. It is not an Eclipse Foundation project, and neither the Eclipse Foundation nor Broadcom endorses it.
 
 - Upstream: https://github.com/eclipse-che4z/che-che4z-lsp-for-cobol
-- Based on upstream commit `2bac488b85dd1574b6ffe0524870a963695b04b4` (October 9, 2026)
+- Based on upstream commit `7ae2bceb8bcfd5f0692d2b8af8e846b93ae42a26` (October 20, 2026)
 - License: Eclipse Public License 2.0, unchanged. See [LICENSE.md](LICENSE.md). Amp's changes are made available under the same license.
 - The original project's README is [CHE4Z-README.md](CHE4Z-README.md).
 
@@ -33,14 +33,14 @@ All changes are in the language server under `server/`. Each modified file lists
 
 ## Toolkit
 
-[toolkit/python](toolkit/python) is `mfmap`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.mfmap/map.db`, SQLite) that re-parses only changed programs, runs resolvers that add entities and relationships from CICS definitions, BMS maps, JCL, Db2 DDL, Control-M and CA-7 schedules, OpenAPI and z/OS Connect definitions with the web pages that call them, and Easytrieve programs, counts `CALL 'CBLTDLI'` as IMS data access, and `mfmap serve` shows a page, refreshed while a parse runs, with three tabs: Notes (open questions for people to answer, and the agent's notes), Parser (how the map was built) and Backlog. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository. Its `bms-copybooks` command writes COBOL symbolic map copybooks from BMS map source for builds that do not keep them.
+[toolkit/python](toolkit/python) is `mfmap`, a Python library and command line that runs the parser over a source tree and reads the graph output as typed programs, data items, paragraphs and statements, with calls and data access between programs. It records each parse in a store (`.mfmap/map.db`, SQLite) that re-parses only changed programs, runs resolvers that add entities and relationships from CICS definitions, BMS maps, JCL, Db2 DDL, Control-M and CA-7 schedules, OpenAPI and z/OS Connect definitions with the web pages that call them, and Easytrieve programs, counts `CALL 'CBLTDLI'` as IMS data access, and `mfmap serve` shows a page, refreshed while a parse runs, with four tabs: Notes (open questions, answered with `mfmap answer`, and the agent's notes), Parser (how the map was built), Backlog (the units in `migration.json`) and Map (the resolved programs, entry points, data and calls, which can be grouped by unit, wave or status). The page is a Svelte app in [toolkit/web](toolkit/web); its built files are committed, so serving it needs no Node or network. It is part of this fork and uses the same license. Its `fetch-mq-copybooks` command downloads IBM MQ's COBOL copybooks from IBM's public MQ redistributable client; those files stay under IBM's license and are not part of this repository. Its `bms-copybooks` command writes COBOL symbolic map copybooks from BMS map source for builds that do not keep them.
 
 ## Set Up
 
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.5.2 https://github.com/JEdelstein25/mfmap tools/mfmap
+git clone --branch v0.5.3 https://github.com/JEdelstein25/mfmap tools/mfmap
 tools/mfmap/mfmap parse src -cf src/copybooks -ce cpy
 tools/mfmap/mfmap serve
 ```
