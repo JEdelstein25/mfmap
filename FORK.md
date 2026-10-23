@@ -40,7 +40,7 @@ All changes are in the language server under `server/`. Each modified file lists
 You need JDK 17 or later, Maven, and Python 3.9 or later. From the root of the application's repository:
 
 ```sh
-git clone --branch v0.5.3 https://github.com/JEdelstein25/mfmap tools/mfmap
+git clone https://github.com/JEdelstein25/mfmap tools/mfmap
 tools/mfmap/mfmap parse src -cf src/copybooks -ce cpy
 tools/mfmap/mfmap serve
 ```
