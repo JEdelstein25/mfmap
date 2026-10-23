@@ -54,11 +54,21 @@ SPDX-License-Identifier: EPL-2.0
 		</div>
 	{/if}
 	{#if item.note}<p class="note">{item.note}</p>{/if}
-	{#if item.drill}
-		<button class="drill" onclick={() => ui.drill?.(item.drill, item.id)}>
-			Open {item.drill.level === 'unit' ? 'unit' : 'paragraphs'} ↘
-		</button>
-	{/if}
+	<div class="actions">
+		{#if item.drill}
+			<button class="drill" onclick={() => ui.drill?.(item.drill, item.id)}>
+				Open {item.drill.level === 'unit' ? 'unit' : 'paragraphs'} ↘
+			</button>
+		{/if}
+		{#if type === 'node' && graph.level === 'estate'}
+			<button class="drill plain" onclick={() => ui.focus?.(item.id)}>Show its neighborhood</button>
+		{/if}
+		{#if type === 'node' && (item.groups?.unit || (item.unit && graph.level === 'program'))}
+			<button class="drill plain" onclick={() => ui.drill?.({ level: 'unit', id: item.groups?.unit || item.unit }, null)}>
+				Open unit {item.groups?.unit || item.unit}
+			</button>
+		{/if}
+	</div>
 	{#if item.items?.length}
 		<h3>Programs</h3>
 		<ul class="items">
@@ -68,6 +78,15 @@ SPDX-License-Identifier: EPL-2.0
 		</ul>
 	{/if}
 
+	{#if item.folded?.length}
+		<h3>Without source in the repository</h3>
+		<ul class="evidence">
+			{#each item.folded as f (f.id)}
+				<li><button class="link" onclick={() => ui.openSource?.(f.evidence[0]?.path, f.evidence[0]?.line)}>
+					<span class="mono">{f.how} {f.label}</span> {f.evidence[0] ? `${short(f.evidence[0].path)}:${f.evidence[0].line}` : ''}</button></li>
+			{/each}
+		</ul>
+	{/if}
 	{#if questions.length}
 		<h3>Open questions</h3>
 		{#each questions as q (q.id)}

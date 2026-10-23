@@ -84,9 +84,16 @@ The page refreshes while a parse runs or the notes change. It has four tabs:
   parse root and next to the store; `--plan` names another.
 - **Map** draws the store, `migration.json` and the open questions as a diagram, one level at a
   time, so it never draws the whole map:
-  - **Estate** (`#map`): the units, a column per wave, with the data stores more than one unit
-    uses along the bottom and the unit dependencies from `migration.json` (shown when you point at
-    a unit). Programs no unit rewrites are one card.
+  - **Estate** (`#map`): the resolved graph, with or without `migration.json`: programs and
+    their calls (CALL, LINK, XCTL), the ways in that start them (transactions, job steps,
+    procedures, APIs, web pages), the screens they send and receive and the data stores they read
+    and write. A call whose target is set at run time is a dashed edge labeled with the expression.
+    **Group** draws boxes around the same nodes by unit, wave or status from `migration.json`
+    (none by default, and the only choice without a plan); the edges never change. Programs with
+    no source in the repository that call and touch nothing are folded into their callers' cards
+    until you turn on **Programs without source**. A large estate opens zoomed in on its ways in;
+    search or **Show its neighborhood** focuses a node and what is 1 to 3 hops from it
+    (`#map/focus/<node>`).
   - **Unit** (`#map/unit/<id>`): its ways in (transactions, jobs, APIs, queues, callers), its
     programs, the screens they send and receive, the data they read and write, and the programs
     they call.

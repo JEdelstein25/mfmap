@@ -501,18 +501,28 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(status, 200)
         nodes = {n["id"]: n for n in estate["nodes"]}
         edges = {(e["source"], e["target"]): e for e in estate["edges"]}
-        self.assertEqual([b["id"] for b in estate["bands"]], ["wave-1", "wave-2", "shared"])
-        self.assertEqual((nodes["unit:U1"]["overlays"]["status"], nodes["unit:U2"]["overlays"]["status"]),
-                         ("building", "todo"))
-        # The CICS file and its dataset are one boundary node, not two; only stores both units use are drawn.
-        self.assertEqual([n["id"] for n in estate["nodes"] if n["band"] == "shared"], ["dataset:PROD.SAMPLE.ACCOUNTS"])
-        self.assertEqual(edges[("unit:U1", "dataset:PROD.SAMPLE.ACCOUNTS")]["label"], "READ/WRITE")
-        recorded = edges[("unit:U2", "dataset:PROD.SAMPLE.ACCOUNTS")]
-        self.assertEqual((recorded["label"], recorded["count"]), ("READ", 1))
-        self.assertEqual(recorded["evidence"][0]["line"], 8)
-        self.assertEqual(edges[("unit:U2", "unit:U1")]["label"], "NEEDS")
-        self.assertEqual(nodes["unit:U2"]["overlays"]["questions"], ["Q2"])
+        # The estate is the resolved graph: ways in start programs, programs call programs and read
+        # and write data, and a call set at run time is a dashed edge labeled with its expression.
+        self.assertEqual(edges[("transaction:SAMP", "program:SAMPLE")]["label"], "START")
+        self.assertEqual(edges[("job:SAMPJOB", "program:SAMPLE")]["label"], "RUN")
+        self.assertEqual(edges[("program:SAMPLE", "program:SAMPUTIL")]["label"], "CALL")
+        self.assertEqual(edges[("program:SAMPLE", "screen:SAMPSET.SAMPMAP")]["label"], "SEND")
+        dynamic = edges[("program:SAMPLE", "dynamic:SAMPLE:WS-NEXT-PGM")]
+        self.assertEqual((dynamic["label"], dynamic["dashed"], dynamic["evidence"][0]["line"]), ("XCTL WS-NEXT-PGM", True, 79))
+        # The CICS file and its dataset are one store, which the agent's recorded read reaches too.
+        self.assertNotIn("vsam:ACCTFIL", nodes)
+        self.assertEqual(edges[("program:SAMPLE", "dataset:PROD.SAMPLE.ACCOUNTS")]["label"], "READ/WRITE")
+        recorded = edges[("program:SAMPUTIL", "dataset:PROD.SAMPLE.ACCOUNTS")]
+        self.assertEqual((recorded["label"], recorded["count"], recorded["evidence"][0]["line"]), ("READ", 1, 8))
+        self.assertEqual(nodes["program:SAMPLE"]["overlays"]["questions"], ["Q1"])
+        # Grouping is only what the plan says about each node; data has no unit.
+        self.assertEqual(estate["groupings"], ["none", "unit", "wave", "status"])
+        self.assertEqual(nodes["program:SAMPLE"]["groups"], {"unit": "U1", "wave": "Wave 1", "status": "building"})
+        self.assertEqual(nodes["program:ONLINE"]["groups"]["unit"], "U2")
+        self.assertEqual(nodes["dataset:PROD.SAMPLE.ACCOUNTS"]["groups"], {})
 
+        nodes_before = list(nodes)
+        edges_before = sorted((e["id"], e["count"]) for e in estate["edges"])
         self.assertEqual(get("/api/graph", etag)[0], 304)
         questions.ask(self.store, "A third question")
         status, newer, _ = get("/api/graph", etag)
@@ -541,10 +551,17 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(labels[("paragraph:SAMPLE.2000-DB2", "db2:BANK.AUDIT_LOG")], "WRITE")
         self.assertIn(79, [e["line"] for e in nodes["program:SAMPLE"]["overlays"]["unresolvedEvidence"]])
 
-        # Every node and edge opens its source: the plan file a dependency cites is readable too.
-        cited = edges[("unit:U2", "unit:U1")]["evidence"][0]
-        with urllib.request.urlopen(f"{base}/api/source?path={urllib.parse.quote(cited['path'])}&line=1") as r:
+        # The plan file is readable from the source viewer.
+        plan_path = urllib.parse.quote(str(self.src / "migration.json"))
+        with urllib.request.urlopen(f"{base}/api/source?path={plan_path}&line=1") as r:
             self.assertIn('"wave": 2', "".join(json.loads(r.read())["lines"]))
+
+        # Without migration.json the estate is the same graph, with nothing to group by.
+        (self.src / "migration.json").unlink()
+        bare = get("/api/graph")[2]
+        self.assertEqual(bare["groupings"], ["none"])
+        self.assertEqual(sorted(n["id"] for n in bare["nodes"]), sorted(nodes_before))
+        self.assertEqual(sorted((e["id"], e["count"]) for e in bare["edges"]), edges_before)
         with urllib.request.urlopen(f"{base}/static/map.js") as r:
             self.assertGreater(len(r.read()), 1000)
 

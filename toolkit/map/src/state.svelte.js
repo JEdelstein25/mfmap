@@ -15,9 +15,14 @@ export const ui = $state({
 	sketch: false,
 	overlays: { status: true, errors: true, unresolved: true, questions: true },
 	fallsThrough: false,
-	// Set by App: drill(drill, nodeId), select(type, id), openSource(path, line).
+	// Estate: edges shown around the focused node; current zoom, which hides edge labels when small.
+	hops: 1,
+	showLeaves: false,
+	zoom: 1,
+	// Set by App: drill(drill, nodeId), select(type, id), focus(nodeId), openSource(path, line).
 	drill: null,
 	select: null,
+	focus: null,
 	openSource: null,
 })
 

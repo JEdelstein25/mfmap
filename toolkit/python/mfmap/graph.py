@@ -10,9 +10,11 @@ the open questions, aggregated on the server so the page never draws the whole m
 
 There are three levels, each a small graph the page lays out and draws:
 
-- ``estate``: one node per unit, in a band per wave, plus the data stores more than one unit reads
-  or writes (the boundary between units) and a node for the programs no unit rewrites. Edges are a
-  unit's reads and writes of a shared store and its dependencies on other units.
+- ``estate``: the resolved graph itself, whether or not there is a plan: programs and their calls
+  (CALL, LINK, XCTL), the ways in that start them (transactions, job steps, procedures, APIs, web
+  pages, z/OS assets), the screens they send and receive, the data stores they read and write, and
+  a dashed node per call whose target is set at run time. Each node carries the unit, wave and
+  status ``migration.json`` gives it, if any, so the page can draw groups around the same nodes.
 - ``unit``: the unit's ways in (transactions, jobs, APIs, queues, callers in other units), its
   programs, the screens they send and receive, the programs they call in other units, and every
   data store they read or write.
@@ -47,6 +49,8 @@ DATA_TYPES = {"vsam": "VSAM", "dataset": "DATASET", "db2": "DB2", "ims": "IMS", 
               "file": "FILE", "mq": "MQ", "queue": "TS/TD QUEUE", "ims-message": "IMS MSG", "gsam": "GSAM"}
 ACCESS = {"read": "read", "write": "write", "read-write": "read-write"}
 ENTRY_KINDS = {"starts": "START", "runs": "RUN", "serves": "SERVE", "triggers": "TRIGGER"}
+# What can start a program: a transaction, a job or procedure step, an API or an IMS transaction.
+ENTRY_TYPES = ("transaction", "job", "proc", "api", "ims-transaction")
 CALL_KINDS = {"calls": "CALL", "links": "LINK", "transfers": "XCTL", "loads": "LOAD",
               "calls-procedure": "SQL CALL"}
 FLOW_KINDS = {"enters": "ENTER", "performs": "PERFORM", "falls-through": "FALLS THROUGH",
@@ -136,7 +140,6 @@ class Map:
             conn.close()
         self.plan = self.plan or {"units": [], "excluded": []}
         self.units = {u["id"]: u for u in self.plan.get("units", [])}
-        self.unit_lines = self._unit_lines()
         self.owner, self.partial = {}, collections.defaultdict(dict)  # program -> unit; program -> {paragraph: unit}
         for u in self.units.values():
             for p in u["programs"]:
@@ -179,15 +182,6 @@ class Map:
         self.question_links = self._link_questions()
 
     # --- identities -------------------------------------------------------------------------
-
-    def _unit_lines(self) -> dict:
-        lines = {}
-        if self.plan_path:
-            for i, text in enumerate(self.plan_path.read_text(encoding="utf-8").splitlines(), 1):
-                m = re.search(r'"id"\s*:\s*"([^"]+)"', text)
-                if m and m.group(1) in self.units and m.group(1) not in lines:
-                    lines[m.group(1)] = i
-        return lines
 
     def _data_identity(self) -> dict:
         """Endpoint -> canonical data node ID. A CICS file and the dataset it is stored in are one
@@ -484,30 +478,6 @@ class Map:
     def _rel(self, path: Optional[str]) -> Optional[str]:
         return os.path.relpath(path, self.root) if path else None
 
-    def unit_node(self, u: dict, band: str) -> dict:
-        programs = self.unit_programs(u["id"])
-        eps = [f"program:{p}" for p in programs]
-        paragraphs = [r["target"] for p in eps for r in self.out[p] if r["kind"] == "contains"]
-        logic = [x for x in paragraphs if x in self.business]
-        tags = []
-        for p in programs:
-            for t in self.program_tags(p):
-                if t not in tags:
-                    tags.append(t)
-        entries = u.get("entryPoints", [])
-        data = {d for p in eps for d, _ in self.accesses(p)}
-        status = u.get("status", "todo")
-        return {"id": f"unit:{u['id']}", "kind": "unit", "label": u["name"], "sub": f"{u['id']} · wave {u['wave']}",
-                "band": band, "tags": tags[:7],
-                "counts": [{"n": len(programs), "label": "programs"}, {"n": len(entries), "label": "ways in"},
-                           {"n": len(data), "label": "stores"}, {"n": len(logic), "label": "logic"}],
-                "note": ", ".join(programs[:8]) + (" …" if len(programs) > 8 else ""),
-                "evidence": [_where(str(self.plan_path), self.unit_lines.get(u["id"]), "migration.json")] +
-                            ([_where(str(self.plan_path.parent / "units" / f"{u['id']}.md"), 1, "unit notes")]
-                             if self.plan_path and (self.plan_path.parent / "units" / f"{u['id']}.md").is_file() else []),
-                "drill": {"level": "unit", "id": u["id"]}, "unit": u["id"],
-                "overlays": self.overlays([f"unit:{u['id']}", *eps, *paragraphs, *entries], programs, status)}
-
     @staticmethod
     def edge(source: str, target: str, kind: str, label: str, tone: str, rels: list[dict],
              dashed: bool = False) -> dict:
@@ -531,58 +501,123 @@ class Map:
     # --- levels -----------------------------------------------------------------------------
 
     def estate(self, _id: Optional[str] = None) -> dict:
-        waves = sorted({u["wave"] for u in self.units.values()})
-        bands = [{"id": f"wave-{w}", "label": f"Wave {w}",
-                  "sub": f"{sum(1 for u in self.units.values() if u['wave'] == w)} units"} for w in waves]
-        nodes = [self.unit_node(u, f"wave-{u['wave']}") for u in sorted(self.units.values(),
-                                                                          key=lambda u: (u["wave"], u["id"]))]
-        # Data each unit touches, and which units share it.
-        touches = collections.defaultdict(lambda: collections.defaultdict(list))  # data -> unit -> rels
-        for uid in self.units:
-            for p in self.unit_programs(uid):
-                for d, r in self.accesses(f"program:{p}"):
-                    touches[d][uid].append(r)
-        shared = sorted(d for d, by in touches.items() if len(by) > 1)
-        edges = []
-        if shared:
-            bands.append({"id": "shared", "label": "Shared data", "sub": f"{len(shared)} stores more than one unit uses"})
-            for d in shared:
-                nodes.append(self.data_node(d, "shared", self.users[d]))
-                for uid, rels in touches[d].items():
-                    label, tone = self.access_label({r["kind"] for r in rels})
-                    edges.append(self.edge(f"unit:{uid}", d, "access", label, tone, rels))
-        # Dependencies between units, from migration.json.
-        deps = collections.defaultdict(list)
-        for u in self.units.values():
-            for dep in u.get("dependencies", []):
-                if dep["unit"] in self.units:
-                    deps[(u["id"], dep["unit"])].append({"source": f"unit:{u['id']}", "kind": "depends on",
-                                                         "target": dep["on"], "note": dep["handling"],
-                                                         "path": str(self.plan_path),
-                                                         "line": self.unit_lines.get(u["id"]),
-                                                         "text": f"{dep['on']}: {dep['handling']}"})
-        for (a, b), rels in sorted(deps.items()):
-            edges.append(self.edge(f"unit:{a}", f"unit:{b}", "depends", "NEEDS", "depends", rels, dashed=True))
-        # Programs outside every unit.
-        outside = sorted(set(self.programs) - set(self.owner))
-        if outside:
-            bands.insert(0, {"id": "outside", "label": "Not migrated", "sub": "excluded or unassigned"})
-            excluded = [p for p in outside if p in self.excluded]
-            nodes.insert(0, {"id": "group:outside", "kind": "group", "label": f"{len(outside)} programs no unit rewrites",
-                             "sub": f"{len(excluded)} excluded in migration.json", "band": "outside",
-                             "tags": [], "counts": [{"n": len(excluded), "label": "excluded"},
-                                                    {"n": len(outside) - len(excluded), "label": "unassigned"}],
-                             "note": ", ".join(outside), "evidence": [_where(str(self.plan_path), None, "excluded")]
-                             if self.plan_path else [], "drill": None, "unit": None,
-                             "items": [{"label": p, "note": self.excluded.get(p, "not in any unit"),
-                                        "drill": {"level": "program", "id": p}} for p in outside],
-                             "overlays": self.overlays([f"program:{p}" for p in outside], outside)})
+        """The resolved graph itself: programs and their calls, the ways in that start them, the
+        screens they show and the data they read and write. Calls whose target is set at run time
+        are dashed edges to a node of their own, labeled with the expression. Nothing here comes
+        from ``migration.json``; each node only carries the unit, wave and status the plan gives it
+        (when there is a plan), for the page to group by."""
+        nodes, edges = {}, []
+        parsed = set(self.programs)
+
+        def program(endpoint: str) -> str:
+            if endpoint not in nodes:
+                name = endpoint.partition(":")[2]
+                node = self.program_node(name, "", external=name not in parsed)
+                if name not in parsed and name not in self.excluded:
+                    node["note"] = "no source in the repository"
+                nodes[endpoint] = node
+            return endpoint
+
+        def entry(endpoint: str) -> str:
+            if endpoint not in nodes:
+                nodes[endpoint] = self.entry_node(endpoint, "")
+            return endpoint
+
+        def link(source, target, kind, label, tone, rels, dashed=False):
+            edges.append(self.edge(source, target, kind, label, tone, rels, dashed=dashed))
+
+        for name in sorted(parsed):
+            program(f"program:{name}")
+        grouped = collections.defaultdict(list)
+        for r in self.rels:
+            src, dst, kind = r["source"], r["target"], r["kind"]
+            stype, dtype = src.partition(":")[0], (dst or "").partition(":")[0]
+            if kind in ENTRY_KINDS and stype in ENTRY_TYPES and dtype in ("program", "proc"):
+                grouped[(src, dst, kind)].append(r)
+            elif kind == "calls" and stype in ("page", "api") and dtype == "api":
+                grouped[(src, dst, "calls-api")].append(r)
+            elif kind == "links" and stype == "zosasset" and dtype == "program":
+                grouped[(src, dst, kind)].append(r)
+            elif stype == "program" and kind in CALL_KINDS and kind != "calls-procedure":
+                if dst:
+                    grouped[(src, dst, kind)].append(r)
+                else:
+                    expression = r["expression"] or "?"
+                    grouped[(src, f"dynamic:{src.partition(':')[2]}:{expression}", kind)].append(r)
+            elif stype == "program" and kind in ("sends", "receives") and dtype == "screen":
+                grouped[(src, dst, "screen")].append(r)
+            elif stype == "program" and kind == "submits" and dtype == "job":
+                grouped[(src, dst, kind)].append(r)
+        for (src, dst, kind), rels in sorted(grouped.items()):
+            if kind in ENTRY_KINDS or kind in ("calls-api", "links") and src.startswith("zosasset:"):
+                entry(src)
+                program(dst) if dst.startswith("program:") else entry(dst)
+                label = ENTRY_KINDS.get(kind, "LINK")
+                link(src, dst, kind, label, "control", rels)
+            elif kind == "calls-api":
+                entry(src), entry(dst)
+                link(src, dst, "call", "CALL", "control", rels)
+            elif kind == "screen":
+                entry(dst)
+                modes = {r["kind"] for r in rels}
+                link(src, dst, "screen", "SEND/RECEIVE" if len(modes) == 2 else modes.pop().upper().rstrip("S"),
+                     "screen", rels)
+            elif kind == "submits":
+                entry(dst)
+                link(src, dst, "submit", "SUBMIT", "control", rels)
+            elif dst.startswith("dynamic:"):
+                expression = dst.split(":", 2)[2]
+                if dst not in nodes:
+                    owner = self.owner.get(src.partition(":")[2])
+                    nodes[dst] = {"id": dst, "kind": "dynamic", "label": expression, "sub": "set at run time",
+                                  "band": "", "tags": [], "counts": [], "note": rels[0]["note"],
+                                  "evidence": [], "drill": None, "unit": owner,
+                                  "overlays": self.overlays([], [], None)}
+                link(src, dst, "dynamic", f"{CALL_KINDS[kind]} {expression}", "control", rels, dashed=True)
+            else:
+                program(dst)
+                link(src, dst, "call", CALL_KINDS[kind], "control", rels, dashed=kind == "transfers")
+        # Reads and writes, with a CICS file and its dataset as one store.
+        access = collections.defaultdict(list)
+        for name in parsed:
+            for d, r in self.accesses(f"program:{name}"):
+                access[(f"program:{name}", d)].append(r)
+        for (src, d), rels in sorted(access.items()):
+            if d not in nodes:
+                nodes[d] = self.data_node(d, "", self.users[d])
+            label, tone = self.access_label({r["kind"] for r in rels})
+            link(src, d, "access", label, tone, rels)
+        for n in nodes.values():
+            n["groups"] = self.groups_of(n)
+        entries = sum(1 for n in nodes.values() if n["kind"] in ("entry", "screen"))
+        dynamic = sum(1 for n in nodes.values() if n["kind"] == "dynamic")
+        data = sum(1 for n in nodes.values() if n["kind"] == "data")
         return {"level": "estate", "id": None, "title": "Estate",
-                "subtitle": f"{len(self.units)} units in {len(waves)} waves, {len(shared)} shared stores; "
-                            "double-click a unit to open it",
+                "subtitle": f"{len(parsed)} programs, {entries} ways in and screens, {data} data stores, "
+                            f"{dynamic} calls set at run time; double-click a program for its paragraphs",
                 "crumbs": [{"level": "estate", "id": None, "label": "Estate"}],
-                "bands": bands, "nodes": nodes, "edges": edges, "layout": "bands",
+                "bands": [], "nodes": list(nodes.values()), "edges": edges, "layout": "graph",
+                "groupings": ["none", "unit", "wave", "status"] if self.units else ["none"],
+                "groupLabels": {"unit": {u["id"]: u["name"] for u in self.units.values()}},
                 "totals": self.totals()}
+
+    def groups_of(self, node: dict) -> dict:
+        """The unit, wave and status ``migration.json`` gives a node, for the page to group by: a
+        program's unit, a way in that exactly one unit lists, and a run-time call its program's unit.
+        Data stores are in no unit; the plan does not say who owns them."""
+        uid = None
+        kind, _, name = node["id"].partition(":")
+        if kind == "program":
+            uid = self.owner.get(name)
+        elif kind == "dynamic":
+            uid = node.get("unit")
+        elif node["kind"] in ("entry", "screen"):
+            listed = [u["id"] for u in self.units.values() if node["id"] in u.get("entryPoints", [])]
+            uid = listed[0] if len(listed) == 1 else None
+        if not uid:
+            return {}
+        u = self.units[uid]
+        return {"unit": uid, "wave": f"Wave {u['wave']}", "status": u.get("status", "todo")}
 
     def totals(self) -> dict:
         endpoints = set(self._all_endpoints())

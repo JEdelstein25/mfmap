@@ -56,7 +56,7 @@ SPDX-License-Identifier: EPL-2.0
 		style="stroke: {color}; stroke-width: {width};{dash ? ` stroke-dasharray: ${dash};` : ''}"
 	/>
 {/if}
-{#if text && (data?.tone !== 'depends' || active)}
+{#if text && (data?.tone !== 'depends' || active) && (active || ui.zoom >= 0.55)}
 	<EdgeLabel x={path[1]} y={path[2]}>
 		<button
 			class="mf-edge-label nodrag nopan"

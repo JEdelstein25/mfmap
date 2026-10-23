@@ -9,8 +9,7 @@
 // Positions for one level of the map from /api/graph. The server decides what to draw; this only
 // places it:
 //
-// - bands (estate): a horizontal band per wave, as tiers in an architecture map, with the shared
-//   data in a band below, ordered under the units that use it.
+// - graph (estate): the resolved graph left to right, optionally boxed by unit, wave or status.
 // - columns (unit): a column per role (ways in, callers, programs, called, data), ordered so edges
 //   cross as little as possible.
 // - flow (program): paragraphs left to right with dagre, following PERFORM, GO TO and calls.
@@ -93,57 +92,93 @@ function order(groups, edges, rounds = 6) {
 	}
 }
 
-function bands(g) {
-	// Waves left to right as columns, so dependencies read from later waves back to earlier ones; the
-	// shared data runs along the bottom under the units that use it.
-	const PAD = 30, TOP = 58, GAP_X = 110, GAP_Y = 34
-	const nodes = [], placed = new Map()
-	const columnsOf = g.bands.filter((b) => b.id !== 'shared')
-	const waves = columnsOf.filter((b) => b.id !== 'outside').concat(columnsOf.filter((b) => b.id === 'outside'))
-	const members = (b) => g.nodes.filter((n) => n.band === b.id)
-	const stackHeight = (list) => list.reduce((s, n) => s + size(n)[1] + GAP_Y, -GAP_Y)
-	const tallest = Math.max(...waves.map((b) => stackHeight(members(b))), 200)
-	let x = 0
-	waves.forEach((b, i) => {
-		const list = members(b)
-		const width = Math.max(...list.map((n) => size(n)[0]), 240) + PAD * 2
-		let y = TOP + (tallest - stackHeight(list)) / 2
-		for (const n of list) {
-			const fn = flowNode(n, x + (width - size(n)[0]) / 2, y)
-			nodes.push(fn)
-			placed.set(n.id, fn)
-			y += size(n)[1] + GAP_Y
-		}
-		nodes.unshift(bandNode(b, x, 0, width, tallest + TOP + PAD, g.bands.indexOf(b), true))
-		x += width + GAP_X
-	})
-	const shared = g.bands.find((b) => b.id === 'shared')
-	if (shared) {
-		const list = members(shared)
-		const want = (n) => {
-			const users = g.edges.filter((e) => e.target === n.id).map((e) => placed.get(e.source)).filter(Boolean)
-			return users.length ? users.reduce((s, u) => s + center(u).x, 0) / users.length : x / 2
-		}
-		const goals = list.map((n) => ({ n, x: want(n) - size(n)[0] / 2 })).sort((a, b) => a.x - b.x)
-		// Each store under its users, pushed right where they would overlap, then the row recentred.
-		let edge = -Infinity
-		for (const s of goals) {
-			s.x = Math.max(s.x, edge)
-			edge = s.x + size(s.n)[0] + 36
-		}
-		const total = x - GAP_X
-		const shift = goals.length ? Math.min(0, (total - edge + 36) / 2) : 0
-		const top = tallest + TOP + PAD + 70
-		for (const s of goals) {
-			const fn = flowNode(s.n, s.x + shift, top + TOP)
-			nodes.push(fn)
-			placed.set(s.n.id, fn)
-		}
-		const h = Math.max(...list.map((n) => size(n)[1]), 60)
-		const left = Math.min(0, ...goals.map((s) => s.x + shift)) - PAD
-		const right = Math.max(total, ...goals.map((s) => s.x + shift + size(s.n)[0])) + PAD
-		nodes.unshift(bandNode(shared, left, top, right - left, TOP + h + PAD, g.bands.indexOf(shared), false))
+// The estate: every node of the resolved graph as a chip, laid out left to right from the ways in
+// through the programs to the data, with dagre. A grouping only adds boxes around the same nodes:
+// the edges are the same with or without it.
+const CHIP = { program: [220, 58], external: [196, 46], entry: [196, 46], screen: [196, 46], data: [220, 54],
+	dynamic: [210, 42] }
+const GROUP_PAD = 18, GROUP_HEAD = 30
+const chipSize = (n) => { const [w, h] = CHIP[n.kind] || CHIP.entry; return [w, n.folded?.length ? h + 12 : h] }
+
+function chip(n, x, y) {
+	const [w, h] = chipSize(n)
+	return { id: n.id, type: 'chip', position: { x, y }, width: w, height: h, data: { ...n, w, h }, draggable: true,
+		zIndex: 1 }
+}
+
+// dagre, left to right: top-left positions by ID, and the size of the whole.
+function arrange(items, links, nodesep) {
+	const d = new dagre.graphlib.Graph()
+	d.setGraph({ rankdir: 'LR', nodesep, ranksep: 140, edgesep: 6, marginx: 0, marginy: 0 })
+	d.setDefaultEdgeLabel(() => ({}))
+	for (const { id, w, h } of items) d.setNode(id, { width: w, height: h })
+	const ids = new Set(items.map((i) => i.id))
+	// One layout edge per pair, weighted by how many edges it stands for.
+	for (const [s, t, weight] of links) {
+		if (s === t || !ids.has(s) || !ids.has(t)) continue
+		const [a, b] = d.hasEdge(t, s) ? [t, s] : [s, t]
+		const was = d.edge(a, b)
+		d.setEdge(a, b, { weight: (was?.weight || 0) + weight, minlen: 1 })
 	}
+	dagre.layout(d)
+	const at = new Map()
+	let width = 0, height = 0
+	for (const { id, w, h } of items) {
+		const p = d.node(id)
+		at.set(id, { x: p.x - w / 2, y: p.y - h / 2 })
+		width = Math.max(width, p.x + w / 2)
+		height = Math.max(height, p.y + h / 2)
+	}
+	return { at, width, height }
+}
+
+function topology(g, { grouping = 'none' } = {}) {
+	const groupOf = (n) => (grouping === 'none' ? null : n.groups?.[grouping] ?? null)
+	const groups = [...new Set(g.nodes.map(groupOf).filter((v) => v != null))].sort((a, b) => String(a).localeCompare(String(b)))
+	const sizeOf = new Map(g.nodes.map((n) => [n.id, chipSize(n)]))
+	const links = g.edges.map((e) => [e.source, e.target, e.tone === 'control' ? 2 : 1, e.id])
+	// Nodes with no edge and no group (often jobs that only run a utility) go in a grid under the
+	// graph instead of stretching its first column.
+	const linked = new Set(g.edges.flatMap((e) => [e.source, e.target]))
+	const loose = g.nodes.filter((n) => !linked.has(n.id) && groupOf(n) == null)
+	const looseIds = new Set(loose.map((n) => n.id))
+	// Each group is laid out on its own and then placed as one block, so boxes never overlap; the
+	// edges drawn are the same ones, between the same nodes.
+	const inner = new Map(groups.map((v) => {
+		const members = g.nodes.filter((n) => groupOf(n) === v)
+		return [v, arrange(members.map((n) => ({ id: n.id, w: sizeOf.get(n.id)[0], h: sizeOf.get(n.id)[1] })), links, 14)]
+	}))
+	const blockOf = new Map(g.nodes.map((n) => [n.id, groupOf(n) != null ? `group:${groupOf(n)}` : n.id]))
+	const items = [
+		...groups.map((v) => ({ id: `group:${v}`, w: inner.get(v).width + GROUP_PAD * 2, h: inner.get(v).height + GROUP_HEAD + GROUP_PAD })),
+		...g.nodes.filter((n) => groupOf(n) == null && !looseIds.has(n.id)).map((n) => ({ id: n.id, w: sizeOf.get(n.id)[0], h: sizeOf.get(n.id)[1] })),
+	]
+	const outer = arrange(items, links.map(([s, t, w, name]) => [blockOf.get(s), blockOf.get(t), w, name]), groups.length ? 40 : 12)
+	const nodes = [], placed = new Map()
+	groups.forEach((v, i) => {
+		const box = outer.at.get(`group:${v}`)
+		const width = inner.get(v).width + GROUP_PAD * 2, height = inner.get(v).height + GROUP_HEAD + GROUP_PAD
+		const label = grouping === 'unit' ? g.groupLabels?.unit?.[v] || v : String(v)
+		nodes.push({ id: `group:${v}`, type: 'groupbox', position: { ...box }, width, height, zIndex: -1, selectable: false,
+			draggable: false, focusable: false,
+			data: { id: v, label, index: i, grouping, w: width, h: height, drill: grouping === 'unit' ? { level: 'unit', id: v } : null } })
+	})
+	for (const n of g.nodes) {
+		if (looseIds.has(n.id)) continue
+		const v = groupOf(n)
+		const p = v != null
+			? { x: outer.at.get(`group:${v}`).x + GROUP_PAD + inner.get(v).at.get(n.id).x, y: outer.at.get(`group:${v}`).y + GROUP_HEAD + inner.get(v).at.get(n.id).y }
+			: outer.at.get(n.id)
+		const fn = chip(n, p.x, p.y)
+		nodes.push(fn)
+		placed.set(n.id, fn)
+	}
+	const columns = Math.max(4, Math.floor(Math.max(outer.width, 900) / 236))
+	loose.sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label)).forEach((n, i) => {
+		const fn = chip(n, (i % columns) * 236, outer.height + 80 + Math.floor(i / columns) * 76)
+		nodes.push(fn)
+		placed.set(n.id, fn)
+	})
 	return { nodes, edges: attach(g.edges, placed, false) }
 }
 
@@ -217,6 +252,6 @@ function flow(g) {
 	return { nodes, edges: attach(g.edges, placed, false).map((e) => ({ ...e, data: { ...e.data, step: true } })) }
 }
 
-export function layout(g) {
-	return { bands, columns, flow }[g.layout](g)
+export function layout(g, options = {}) {
+	return { graph: topology, columns, flow }[g.layout](g, options)
 }
