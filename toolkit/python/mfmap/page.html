@@ -13,6 +13,7 @@ SPDX-License-Identifier: EPL-2.0
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notes</title>
+<link rel="stylesheet" href="static/map.css">
 <style>
   body { margin: 0; background: #fbfbfa; color: #1d1d1b; font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
   article { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
@@ -54,16 +55,22 @@ SPDX-License-Identifier: EPL-2.0
   .q .answer { margin-top: 10px; font-size: 14px; } .q .answer strong { color: #2f7a3d; font-weight: 600; }
   .empty { color: #8a8984; font-style: italic; }
   .close { float: right; border: 0; background: none; font-size: 20px; cursor: pointer; color: #8a8984; }
+  /* The Map tab fills the window under the header; its canvas is the bundle in static/. */
+  #map { display: none; height: calc(100vh - var(--head, 64px)); }
+  body.map #map { display: block; } body.map article { display: none; } body.map { overflow: hidden; }
+  body.map nav, body.map #status { max-width: none; }
+  .modal { z-index: 50; }
 </style>
 </head>
 <body>
-<header><div id="status">loading</div><nav><a href="#" data-tab="notes">Notes</a><a href="#parser" data-tab="parser">Parser</a><a href="#backlog" data-tab="backlog">Backlog</a></nav></header>
+<header><div id="status">loading</div><nav><a href="#" data-tab="notes">Notes</a><a href="#parser" data-tab="parser">Parser</a><a href="#backlog" data-tab="backlog">Backlog</a><a href="#map" data-tab="map">Map</a></nav></header>
 <article id="page"></article>
+<div id="map"></div>
 <div class="modal" id="modal"><div class="box" id="box"></div></div>
 <script>
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let root = "", data = null, shown = "";
-const tab = () => ({ "#backlog": "backlog", "#parser": "parser" })[location.hash] || "notes";
+const tab = () => location.hash.startsWith("#map") ? "map" : ({ "#backlog": "backlog", "#parser": "parser" })[location.hash] || "notes";
 // Answers being typed, by question ID, so a refresh does not lose them.
 const drafts = {}, editing = new Set();
 
@@ -139,8 +146,21 @@ function notesPage() {
     + markdown(data.notes);
 }
 
+// The Map tab draws itself (static/map.js) and polls api/graph; this only shows it and lends it the
+// source viewer.
+function showMap(on) {
+  document.body.classList.toggle("map", on);
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab()));
+  if (!on) return;
+  document.body.style.setProperty("--head", document.querySelector("header").offsetHeight + "px");
+  const el = document.getElementById("map");
+  if (!window.MfmapMap) { el.textContent = "Loading the map (static/map.js)."; return; }
+  if (!el.dataset.mounted) { el.textContent = ""; el.dataset.mounted = "1"; window.MfmapMap.open(el, { openSource }); }
+}
+
 function show() {
-  if (!data) return;
+  showMap(tab() === "map");
+  if (!data || tab() === "map") return;
   const t = tab();
   const html = t === "backlog" ? markdown(data.backlog) : t === "parser" ? markdown(data.parser) : notesPage();
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.tab === t));
@@ -161,23 +181,30 @@ document.addEventListener("submit", async e => {
   data.questions = data.questions.map(x => x.id === id ? saved : x);
   document.activeElement?.blur(); shown = ""; show();
 });
-window.addEventListener("hashchange", () => { shown = ""; show(); window.scrollTo(0, 0); });
+window.addEventListener("hashchange", () => { shown = ""; show(); if (tab() !== "map") window.scrollTo(0, 0); });
 
 document.addEventListener("click", async e => {
   if (e.target.closest("[data-edit]")) { editing.add(e.target.closest(".q").dataset.id); shown = ""; show(); return; }
   const src = e.target.closest(".src");
+  const modal = document.getElementById("modal");
+  if (e.target.closest(".modal .close") || e.target === modal) { modal.classList.remove("open"); return; }
+  if (src) openSource(src.dataset.path, src.dataset.line);
+});
+
+async function openSource(path, line) {
   const modal = document.getElementById("modal"), box = document.getElementById("box");
-  if (e.target.closest(".close") || e.target === modal) { modal.classList.remove("open"); return; }
-  if (!src) return;
-  const res = await fetch(`api/source?path=${encodeURIComponent(src.dataset.path)}&line=${src.dataset.line}`);
+  const res = await fetch(`api/source?path=${encodeURIComponent(path)}&line=${line || 1}`);
   modal.classList.add("open");
-  if (!res.ok) { box.innerHTML = `<button class="close">×</button>Cannot show ${esc(src.dataset.path)}`; return; }
+  if (!res.ok) { box.innerHTML = `<button class="close">×</button>Cannot show ${esc(path)}`; return; }
   const s = await res.json();
   box.innerHTML = `<button class="close">×</button><code>${esc(s.path)}:${s.line}</code><pre>${s.lines.map((l, i) =>
     `<span class="${s.start + i === s.line ? "hl" : ""}"><span class="ln">${s.start + i}</span>${esc(l) || " "}</span>`).join("")}</pre>`;
-});
+  box.querySelector(".hl")?.scrollIntoView({ block: "center" });
+}
 document.addEventListener("keydown", e => { if (e.key === "Escape") document.getElementById("modal").classList.remove("open"); });
 refresh();
 </script>
+<script src="static/map.js"></script>
+<script>if (tab() === "map") show();</script>
 </body>
 </html>

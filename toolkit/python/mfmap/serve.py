@@ -5,8 +5,9 @@
 # which is available at https://www.eclipse.org/legal/epl-2.0/
 #
 # SPDX-License-Identifier: EPL-2.0
-"""``mfmap serve``: the Notes, Parser and Backlog tabs, refreshed while a parse runs or the notes
-change. Answers typed on the Notes tab are saved to the store's questions."""
+"""``mfmap serve``: the Notes, Parser, Backlog and Map tabs, refreshed while a parse runs or the notes
+change. Answers typed on the Notes tab are saved to the store's questions. The Map tab's script and
+styles are the prebuilt bundle in ``static/`` (see ``toolkit/map``); the page needs no network."""
 
 from __future__ import annotations
 
@@ -17,19 +18,33 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
+from . import graph as graphs
+from . import plan as plans
 from . import questions
 from .report import backlog, report
 from .store import connect
 
 PAGE = Path(__file__).with_name("page.html")
+STATIC = Path(__file__).with_name("static")
+STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 
 
-def source(store: str | os.PathLike, path: str, line: int, context: int = 12) -> Optional[dict]:
-    """Lines around ``line`` of a source or copybook the store knows about, else None."""
+def source(store: str | os.PathLike, path: str, line: int, context: int = 12,
+           plan: Optional[str] = None) -> Optional[dict]:
+    """Lines around ``line`` of a file the store knows about, else None: a parsed source or
+    copybook, a file a relationship, entity or diagnostic cites, ``migration.json`` or a unit's
+    notes."""
     conn = connect(store)
     try:
         known = any(r["path"] == path or path in json.loads(r["deps"] or "{}")
-                    for r in conn.execute("SELECT path, deps FROM files"))
+                    for r in conn.execute("SELECT path, deps FROM files")) or any(
+            conn.execute(f"SELECT 1 FROM {table} WHERE path = ? LIMIT 1", (path,)).fetchone()
+            for table in ("relationships", "entities", "diagnostics"))
+        if not known:
+            run = conn.execute("SELECT root FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+            found = plans.find(Path(store), run["root"] if run else str(Path(store).parent), plan)
+            known = bool(found) and (Path(path) == found or (Path(path).parent == found.parent / "units"
+                                                             and path.endswith(".md")))
     finally:
         conn.close()
     if not known or not Path(path).is_file():
@@ -61,10 +76,38 @@ def make_handler(store: Path, plan: Optional[str]):
                 body = {**report(store), "backlog": backlog(store, plan)}
                 self.send(200, json.dumps(body).encode(), "application/json")
             elif url.path == "/api/source":
-                found = source(store, query.get("path", ""), int(query.get("line", "1")))
+                found = source(store, query.get("path", ""), int(query.get("line") or "1"), plan=plan)
                 self.send(200 if found else 404, json.dumps(found).encode(), "application/json")
+            elif url.path == "/api/graph":
+                self.graph(query)
+            elif url.path.startswith("/static/") and (STATIC / url.path[8:]).is_file() \
+                    and "/" not in url.path[8:] and Path(url.path).suffix in STATIC_TYPES:
+                self.send(200, (STATIC / url.path[8:]).read_bytes(), STATIC_TYPES[Path(url.path).suffix])
             else:
                 self.send(404, b"not found", "text/plain")
+
+        def graph(self, query: dict) -> None:
+            """One level of the map. The ETag is the store's version, so a page polling with
+            If-None-Match gets 304 until a parse, resolver, unit or question changes."""
+            tag = '"' + graphs.version(store, plan) + '"'
+            if self.headers.get("If-None-Match") == tag:
+                self.send_response(304)
+                self.send_header("ETag", tag)
+                self.end_headers()
+                return
+            try:
+                body = graphs.graph(store, plan, query.get("level", "estate"), query.get("id") or None)
+            except KeyError as e:
+                self.send(404, json.dumps({"error": e.args[0]}).encode(), "application/json")
+                return
+            data = json.dumps(body).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("ETag", tag)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
 
         def do_POST(self):
             if urlparse(self.path).path != "/api/answer":

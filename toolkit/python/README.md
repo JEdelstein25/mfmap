@@ -66,7 +66,7 @@ mfmap questions        # every question, open ones first, with answers
 mfmap answer Q3 "Retired in 2019"   # an empty answer reopens it
 ```
 
-The page refreshes while a parse runs or the notes change. It has three tabs:
+The page refreshes while a parse runs or the notes change. It has four tabs:
 
 - **Notes** is for the people the migration depends on. It starts with **Open Questions**: what the
   source cannot answer, each with what the agent found, the default it is going ahead with and
@@ -82,6 +82,27 @@ The page refreshes while a parse runs or the notes change. It has three tabs:
   and its `units/<unit ID>.md` file, and any problems `mfmap check` finds. Above the waves are the
   progress counts and the threads still working on a unit. The file is looked for in the
   parse root and next to the store; `--plan` names another.
+- **Map** draws the store, `migration.json` and the open questions as a diagram, one level at a
+  time, so it never draws the whole map:
+  - **Estate** (`#map`): the units, a column per wave, with the data stores more than one unit
+    uses along the bottom and the unit dependencies from `migration.json` (shown when you point at
+    a unit). Programs no unit rewrites are one card.
+  - **Unit** (`#map/unit/<id>`): its ways in (transactions, jobs, APIs, queues, callers), its
+    programs, the screens they send and receive, the data they read and write, and the programs
+    they call.
+  - **Program** (`#map/program/<name>`): its paragraphs and the control flow between them
+    (enters, performs, goes to, handles, invokes, and falls through when you turn it on), with
+    the paragraphs recorded as `business-logic` highlighted with their summaries.
+
+  Double-click a card, use its panel or the search box to go down a level; the breadcrumbs go
+  back up. Clicking a card or an edge opens a panel with its open questions, parse errors,
+  unresolved calls and the file and line of every relationship it stands for; each opens the
+  source. The toggles show or hide the overlays (unit status, parse errors, unresolved calls, open
+  questions) and switch to a hand-drawn style. Everything on the map comes from the store, the
+  units in `migration.json` and the questions; it adds no scores or advice of its own. A CICS file
+  and the dataset it is stored in are one store, as are the generations of a GDG. The page asks
+  `/api/graph?level=&id=` every few seconds with the last ETag and redraws when a parse, resolver,
+  `mfmap record`, `migration.json`, a unit's notes or a question changed.
 
 Any `file.cbl:line` reference opens the source around that line. The server binds to 127.0.0.1;
 reach it from elsewhere through a tunnel or port forward. To keep the notes and questions in Git

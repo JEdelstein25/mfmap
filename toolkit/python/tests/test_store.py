@@ -14,7 +14,12 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
@@ -22,7 +27,7 @@ from mfmap import plan, questions, resolvers, store
 from mfmap.__main__ import main
 from mfmap.run import find_sources
 from mfmap.report import add_note, backlog, report, report_markdown
-from mfmap.serve import source
+from mfmap.serve import make_handler, source
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -463,6 +468,85 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(questions.ask(self.store, "Third?")["id"], "Q3")
         with self.assertRaises(KeyError):
             questions.answer(self.store, "Q9", "x", "agent")
+
+    def test_graph_endpoint_draws_each_level_from_the_store_plan_and_questions(self):
+        self.parse(programs=("SAMPLE", "ONLINE", "SAMPUTIL"))
+        # A fact the agent recorded: SAMPUTIL reads the CICS file SAMPLE writes, which is stored in a
+        # dataset SAMPLE also reads through its DD, so the two units share one store.
+        resolvers.record(self.store, "read", "program:SAMPUTIL", "vsam:ACCTFIL", evidence=f"{self.src}/SAMPUTIL.cbl:8")
+        resolvers.record(self.store, "business-logic", "paragraph:SAMPLE.1000-READ",
+                         note="Copies each account to the report", evidence=f"{self.src}/SAMPLE.cbl:46")
+        (self.src / "migration.json").write_text(json.dumps({"version": 1, "units": [
+            {"id": "U1", "name": "Accounts", "wave": 1, "programs": ["program:SAMPLE"], "status": "building"},
+            {"id": "U2", "name": "Rates", "wave": 2, "programs": ["program:SAMPUTIL", "program:ONLINE"],
+             "dependencies": [{"unit": "U1", "on": "vsam:ACCTFIL", "handling": "Reads U1's accounts"}]}]}))
+        questions.ask(self.store, "Is the account copy at SAMPLE.cbl:46 still needed?")
+        questions.ask(self.store, "Who owns the rates? See units/U2.md.")
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.store.resolve(), None))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        base = f"http://127.0.0.1:{server.server_port}"
+
+        def get(path, etag=None):
+            request = urllib.request.Request(base + path, headers={"If-None-Match": etag} if etag else {})
+            try:
+                with urllib.request.urlopen(request) as response:
+                    return response.status, response.headers.get("ETag"), json.loads(response.read())
+            except urllib.error.HTTPError as e:
+                return e.code, e.headers.get("ETag"), None
+
+        status, etag, estate = get("/api/graph")
+        self.assertEqual(status, 200)
+        nodes = {n["id"]: n for n in estate["nodes"]}
+        edges = {(e["source"], e["target"]): e for e in estate["edges"]}
+        self.assertEqual([b["id"] for b in estate["bands"]], ["wave-1", "wave-2", "shared"])
+        self.assertEqual((nodes["unit:U1"]["overlays"]["status"], nodes["unit:U2"]["overlays"]["status"]),
+                         ("building", "todo"))
+        # The CICS file and its dataset are one boundary node, not two; only stores both units use are drawn.
+        self.assertEqual([n["id"] for n in estate["nodes"] if n["band"] == "shared"], ["dataset:PROD.SAMPLE.ACCOUNTS"])
+        self.assertEqual(edges[("unit:U1", "dataset:PROD.SAMPLE.ACCOUNTS")]["label"], "READ/WRITE")
+        recorded = edges[("unit:U2", "dataset:PROD.SAMPLE.ACCOUNTS")]
+        self.assertEqual((recorded["label"], recorded["count"]), ("READ", 1))
+        self.assertEqual(recorded["evidence"][0]["line"], 8)
+        self.assertEqual(edges[("unit:U2", "unit:U1")]["label"], "NEEDS")
+        self.assertEqual(nodes["unit:U2"]["overlays"]["questions"], ["Q2"])
+
+        self.assertEqual(get("/api/graph", etag)[0], 304)
+        questions.ask(self.store, "A third question")
+        status, newer, _ = get("/api/graph", etag)
+        self.assertEqual(status, 200)
+        self.assertNotEqual(newer, etag)
+        self.assertEqual(get("/api/graph?level=unit&id=U9")[0], 404)
+
+        unit = get("/api/graph?level=unit&id=U1")[2]
+        bands = {n["id"]: n["band"] for n in unit["nodes"]}
+        self.assertEqual((bands["transaction:SAMP"], bands["program:SAMPUTIL"]), ("entries", "callees"))
+        # GDG generations are one dataset.
+        self.assertIn("dataset:PROD.SAMPLE.REPORT", bands)
+        self.assertNotIn("dataset:PROD.SAMPLE.REPORT(+1)", bands)
+        start = next(e for e in unit["edges"] if e["source"] == "transaction:SAMP")
+        self.assertEqual((start["label"], start["evidence"][0]["line"]), ("START", 2))
+
+        program = get("/api/graph?level=program&id=SAMPLE")[2]
+        nodes = {n["id"]: n for n in program["nodes"]}
+        labels = {(e["source"], e["target"]): e["label"] for e in program["edges"]}
+        read = nodes["paragraph:SAMPLE.1000-READ"]
+        self.assertEqual((read["highlight"], read["note"]), (True, "Copies each account to the report"))
+        self.assertFalse(nodes["paragraph:SAMPLE.2000-DB2"]["highlight"])
+        self.assertEqual(read["overlays"]["questions"], ["Q1"])
+        self.assertEqual(labels[("paragraph:SAMPLE.0000-MAIN", "paragraph:SAMPLE.1000-READ")], "PERFORM THRU 1000-EXIT")
+        self.assertEqual(labels[("program:SAMPLE", "paragraph:SAMPLE.0000-MAIN")], "ENTER")
+        self.assertEqual(labels[("paragraph:SAMPLE.2000-DB2", "db2:BANK.AUDIT_LOG")], "WRITE")
+        self.assertIn(79, [e["line"] for e in nodes["program:SAMPLE"]["overlays"]["unresolvedEvidence"]])
+
+        # Every node and edge opens its source: the plan file a dependency cites is readable too.
+        cited = edges[("unit:U2", "unit:U1")]["evidence"][0]
+        with urllib.request.urlopen(f"{base}/api/source?path={urllib.parse.quote(cited['path'])}&line=1") as r:
+            self.assertIn('"wave": 2', "".join(json.loads(r.read())["lines"]))
+        with urllib.request.urlopen(f"{base}/static/map.js") as r:
+            self.assertGreater(len(r.read()), 1000)
 
 
 if __name__ == "__main__":

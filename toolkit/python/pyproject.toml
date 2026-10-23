@@ -21,4 +21,4 @@ mfmap = "mfmap.__main__:main"
 packages = ["mfmap", "mfmap.resolvers"]
 
 [tool.setuptools.package-data]
-mfmap = ["page.html", "migration-v1.schema.json"]
+mfmap = ["page.html", "migration-v1.schema.json", "static/*"]
