@@ -1,0 +1,7 @@
+1LJOB,JOB=SAMPJOB,LIST=ALL
+JOB=SAMPJOB LIST=ALL                                  DATE=06.198    PAGE 0001
+
+        --------------------------- TRIGGERED JOBS ----------------------------
+           JOB=SAMPIMS SCHID=030      QTM=0100 LEADTM=0000 SUBMTM=
+
+ 1LJOB,JOB=SAMPIMS,LIST=ALL

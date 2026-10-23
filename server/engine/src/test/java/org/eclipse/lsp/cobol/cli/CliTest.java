@@ -10,7 +10,9 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
- *    Amp - verify AST selection, compact references, graph output and CFAST
+ *    Amp - verify AST selection, compact references, graph output, the graph command and CFAST
+ *    Amp - list the ddl command
+ *    Amp - verify graph IDs name one node each
  *
  */
 package org.eclipse.lsp.cobol.cli;
@@ -60,6 +62,14 @@ class CliTest {
           + "  analysis        analyse cobol source"
           + System.lineSeparator()
           + "  cfast           generate cfast from cobol source"
+          + System.lineSeparator()
+          + "  graph           print graph output for each program path read from stdin, one"
+          + System.lineSeparator()
+          + "                    JSON per line"
+          + System.lineSeparator()
+          + "  ddl             print the tables, keys, indexes and views in Db2 DDL files,"
+          + System.lineSeparator()
+          + "                    one JSON per file"
           + System.lineSeparator();
 
   @Test
@@ -88,7 +98,9 @@ class CliTest {
   void testCliCommands() {
     CommandLine commandLine = new CommandLine(new Cli());
     Set<String> commandList = commandLine.getSubcommands().keySet();
-    assertEquals(4, commandList.size());
+    assertEquals(6, commandList.size());
+    assertTrue(commandList.contains("graph"));
+    assertTrue(commandList.contains("ddl"));
     assertTrue(commandList.contains("analysis"));
     assertTrue(commandList.contains("list_copybooks"));
     assertTrue(commandList.contains("list_sources"));
@@ -222,6 +234,87 @@ class CliTest {
             .getAsJsonObject("asts")
             .getAsJsonObject("VALIDATION");
     assertSameTree(last, output.getAsJsonObject("tree"));
+  }
+
+  @Test
+  void graphIdsNameOneNodeEachWhenACopybookHasValueClauses(@TempDir Path directory)
+      throws Exception {
+    Path copybooks = Files.createDirectory(directory.resolve("cpy"));
+    Files.write(
+        copybooks.resolve("CB.cpy"),
+        ("       01 GROUP-A.\n          05 FIELD-A PIC X VALUE SPACES.\n"
+                + "          05 FIELD-B PIC 9.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    Path source = directory.resolve("DUP.cbl");
+    Files.write(
+        source,
+        ("       IDENTIFICATION DIVISION.\n       PROGRAM-ID. DUP.\n       DATA DIVISION.\n"
+                + "       WORKING-STORAGE SECTION.\n       COPY CB.\n"
+                + "       PROCEDURE DIVISION.\n           DISPLAY FIELD-B.\n           GOBACK.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    JsonObject output =
+        run("analysis", "-s", source.toString(), "-cf", copybooks.toString(), "-ce", "cpy", "--graph");
+    java.util.Map<String, List<JsonObject>> byId = new java.util.HashMap<>();
+    collectAll(output.getAsJsonObject("tree"), byId);
+    byId.forEach(
+        (id, nodes) ->
+            nodes.forEach(node -> assertEquals(nodes.get(0), node, id + " names two nodes")));
+    String target =
+        byId.values().stream()
+            .map(nodes -> nodes.get(0))
+            .filter(n -> "VariableUsageNode".equals(n.get("kind").getAsString()))
+            .filter(n -> "FIELD-B".equals(n.get("name").getAsString()))
+            .findFirst()
+            .orElseThrow(AssertionError::new)
+            .getAsJsonArray("definitions")
+            .get(0)
+            .getAsJsonObject()
+            .get("ref")
+            .getAsString();
+    assertEquals("FIELD-B", byId.get(target).get(0).get("name").getAsString());
+  }
+
+  private static void collectAll(JsonObject node, java.util.Map<String, List<JsonObject>> nodes) {
+    nodes
+        .computeIfAbsent(node.get("id").getAsString(), id -> new java.util.ArrayList<>())
+        .add(node);
+    node.getAsJsonArray("children").forEach(c -> collectAll(c.getAsJsonObject(), nodes));
+  }
+
+  @Test
+  void graphCommandServesManyProgramsWithTheSameOutputAsAnalysis(@TempDir Path directory)
+      throws Exception {
+    Path first = directory.resolve("FIRST.cbl");
+    Path second = directory.resolve("SECOND.cbl");
+    Files.write(
+        first,
+        ("       IDENTIFICATION DIVISION.\n       PROGRAM-ID. FIRST.\n"
+                + "       PROCEDURE DIVISION.\n           CALL 'SECOND'.\n           GOBACK.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    Files.write(
+        second,
+        ("       IDENTIFICATION DIVISION.\n       PROGRAM-ID. SECOND.\n"
+                + "       PROCEDURE DIVISION.\n           DISPLAY UNDEF-Y.\n           GOBACK.\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    PrintStream originalOut = System.out;
+    java.io.InputStream originalIn = System.in;
+    try (PrintStream stream = new PrintStream(output)) {
+      System.setOut(stream);
+      System.setIn(
+          new java.io.ByteArrayInputStream(
+              (first + "\n\n" + second + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+      assertEquals(0, new CommandLine(new Cli()).execute("graph"));
+    } finally {
+      System.setOut(originalOut);
+      System.setIn(originalIn);
+    }
+    String[] lines = output.toString().trim().split("\n");
+    assertEquals(2, lines.length);
+    assertEquals(
+        run("analysis", "-s", first.toString(), "--graph"), JsonParser.parseString(lines[0]));
+    assertEquals(
+        run("analysis", "-s", second.toString(), "--graph"), JsonParser.parseString(lines[1]));
   }
 
   private static void collectNodes(JsonObject node, java.util.Map<String, JsonObject> nodes) {

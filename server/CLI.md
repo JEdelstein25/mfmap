@@ -8,7 +8,8 @@ which is available at https://www.eclipse.org/legal/epl-2.0/
 SPDX-License-Identifier: EPL-2.0
 
 Contributors:
-   Amp - document headless analysis, copybook options and graph output
+   Amp - document headless analysis, copybook options, graph output and the graph command
+   Amp - document the ddl command
 -->
 
 # Command-line analysis
@@ -57,3 +58,28 @@ java -jar engine/target/server.jar cfast -sf /path/source-folder -cf /path/copyb
 ```
 
 The CLI client has no editor UI and returns empty results for editor requests.
+
+## Many programs in one process
+
+`graph` reads program paths from stdin, one per line, and prints each program's graph output (the
+same object as `analysis --graph`) as one line of JSON, in order. Java start-up and warm-up are
+paid once instead of once per program: a 90-line program takes about 2 s on its own
+and about 0.1 s in a warm process. It accepts `-d`, `-cf` and `-ce` like `analysis`.
+
+```sh
+find src -iname '*.cbl' | java -jar engine/target/server.jar graph -cf src/copybooks -ce cpy > graphs.jsonl
+```
+
+## Db2 DDL
+
+`ddl FILE...` parses the `CREATE TABLE`, `CREATE INDEX`, `CREATE VIEW` and `ALTER TABLE`
+statements in each file with the same Db2 grammar as embedded SQL, and prints one line of JSON per
+file: `objects` (each table's columns with type, default and NOT NULL, its primary key, unique keys
+and foreign keys; each index's table and columns; each view's tables), `errors` (statements the
+grammar rejected, with their line) and `otherStatements` (a count of the rest). JCL lines, `--`
+comments and numeric sequence numbers in columns 73 to 80 are skipped, so DDL kept in a DSNTIAD job
+reads as it is. Procedures, functions and triggers are not read here.
+
+```sh
+java -jar engine/target/server.jar ddl db2/*.sql jcl/CREATEDB.jcl > ddl.jsonl
+```

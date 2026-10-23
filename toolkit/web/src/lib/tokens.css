@@ -1,0 +1,114 @@
+/*
+ * Copyright (c) 2026 Amp.
+ *
+ * This program and the accompanying materials are made
+ * available under the terms of the Eclipse Public License 2.0
+ * which is available at https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/* The palette and design tokens for every tab. The palette is a warm grey ink scale for almost
+   everything, one accent, and three signal colours kept for what needs attention: ok, warn
+   (unresolved, set at run time) and danger (parse errors). Kinds of things (programs, jobs,
+   tables...) are told apart by shape and label, never by colour. Components use the role tokens
+   below; a theme changes the palette. */
+
+:root {
+	--mf-ink-900: #1c1c1a;
+	--mf-ink-800: #33322e;
+	--mf-ink-700: #4a4944;
+	--mf-ink-600: #64625b;
+	--mf-ink-500: #838179;
+	--mf-ink-400: #a6a49c;
+	--mf-ink-300: #cfccc3;
+	--mf-ink-200: #e5e3dc;
+	--mf-ink-100: #f1f0eb;
+	--mf-ink-50: #f8f7f3;
+	--mf-ink-0: #ffffff;
+	--mf-accent-700: #2b44a6;
+	--mf-accent-500: #3a5bd9;
+	--mf-accent-400: #7189e3;
+	--mf-accent-200: #c9d3f6;
+	--mf-accent-100: #edf0fc;
+	--mf-ok-500: #2e7d52;
+	--mf-ok-300: #8dbfa2;
+	--mf-ok-100: #e7f2ec;
+	--mf-warn-500: #b2690f;
+	--mf-warn-100: #fbf1e1;
+	--mf-danger-500: #c23a2e;
+	--mf-danger-100: #fbeae8;
+
+	/* Roles */
+	--mf-bg: var(--mf-ink-50);
+	--mf-surface: var(--mf-ink-0);
+	--mf-surface-2: var(--mf-ink-50);
+	--mf-sunken: var(--mf-ink-100);
+	--mf-fg: var(--mf-ink-900);
+	--mf-muted: var(--mf-ink-600);
+	--mf-faint: var(--mf-ink-500);
+	--mf-line: var(--mf-ink-200);
+	--mf-line-strong: var(--mf-ink-300);
+	--mf-accent: var(--mf-accent-500);
+	--mf-accent-soft: var(--mf-accent-100);
+	--mf-ok: var(--mf-ok-500);
+	--mf-warn: var(--mf-warn-500);
+	--mf-danger: var(--mf-danger-500);
+	--mf-question: var(--mf-accent-500);
+	--mf-unresolved: var(--mf-warn-500);
+
+	/* A unit's status in migration.json */
+	--mf-status-todo: var(--mf-ink-400);
+	--mf-status-building: var(--mf-accent-500);
+	--mf-status-built: var(--mf-ok-300);
+	--mf-status-verified: var(--mf-ok-500);
+
+	--mf-radius-sm: 4px;
+	--mf-radius: 8px;
+	--mf-radius-lg: 12px;
+	--mf-shadow-sm: 0 1px 2px rgb(28 28 26 / 0.05);
+	--mf-shadow: 0 1px 2px rgb(28 28 26 / 0.05), 0 3px 10px rgb(28 28 26 / 0.05);
+	--mf-shadow-lg: 0 12px 40px rgb(28 28 26 / 0.16);
+
+	--mf-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+	--mf-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--mf-hand: 'Virgil', 'Excalifont', 'Comic Neue', 'Comic Sans MS', 'Segoe Print', 'Bradley Hand', 'Chalkboard SE', 'Patrick Hand', cursive;
+
+	--mf-header: 52px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--mf-bg); color: var(--mf-fg); font: 14px/1.55 var(--mf-font); -webkit-font-smoothing: antialiased; }
+a { color: var(--mf-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid color-mix(in srgb, var(--mf-accent) 55%, transparent); outline-offset: 1px; }
+.mono { font-family: var(--mf-mono); }
+.muted { color: var(--mf-muted); }
+
+/* Text inputs and selects, wherever they appear. */
+.mf-input, .mf-select {
+	padding: 6px 10px;
+	border: 1px solid var(--mf-line-strong);
+	border-radius: 6px;
+	background: var(--mf-surface);
+	font-size: 13px;
+}
+.mf-input:focus, .mf-select:focus { outline: none; border-color: var(--mf-accent); box-shadow: 0 0 0 3px var(--mf-accent-soft); }
+
+/* Prose: Markdown from the server and the agent. */
+.mf-prose { font-size: 14.5px; line-height: 1.65; }
+.mf-prose h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: -0.01em; }
+.mf-prose h2 { font-size: 17px; margin: 28px 0 8px; padding-top: 14px; border-top: 1px solid var(--mf-line); }
+.mf-prose h3 { font-size: 15px; margin: 22px 0 6px; }
+.mf-prose h4 { font-size: 13px; margin: 16px 0 4px; color: var(--mf-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.mf-prose > :first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.mf-prose p { margin: 8px 0; }
+.mf-prose ul, .mf-prose ol { padding-left: 22px; margin: 6px 0; }
+.mf-prose li { margin: 3px 0; }
+.mf-prose code, .mf-code { font: 12.5px/1.5 var(--mf-mono); background: var(--mf-sunken); padding: 1px 5px; border-radius: var(--mf-radius-sm); }
+.mf-prose pre { font: 12.5px/1.5 var(--mf-mono); background: var(--mf-sunken); padding: 10px 12px; border-radius: 6px; overflow: auto; }
+.mf-prose pre code { background: none; padding: 0; }
+.mf-src { font: 12.5px var(--mf-mono); color: var(--mf-accent); cursor: pointer; }
+.mf-src:hover { text-decoration: underline; }

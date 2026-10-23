@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - provide a Language Environment stand-in for CEEIGZCT
  *
  */
 package org.eclipse.lsp.cobol.core.engine.dialects;
@@ -31,6 +32,7 @@ import org.eclipse.lsp.cobol.common.CleanerPreprocessor;
 import org.eclipse.lsp.cobol.common.DialectRegistryItem;
 import org.eclipse.lsp.cobol.common.ResultWithErrors;
 import org.eclipse.lsp.cobol.common.copybook.CopybookModel;
+import org.eclipse.lsp.cobol.common.copybook.CopybookName;
 import org.eclipse.lsp.cobol.common.copybook.CopybookService;
 import org.eclipse.lsp.cobol.common.copybook.PredefinedCopybookStore;
 import org.eclipse.lsp.cobol.common.copybook.SQLBackend;
@@ -40,11 +42,13 @@ import org.eclipse.lsp.cobol.common.dialects.DialectProcessingContext;
 import org.eclipse.lsp.cobol.common.error.ErrorSeverity;
 import org.eclipse.lsp.cobol.common.error.ErrorSource;
 import org.eclipse.lsp.cobol.common.error.SyntaxError;
+import org.eclipse.lsp.cobol.common.file.WorkspaceFileService;
 import org.eclipse.lsp.cobol.common.mapping.OriginalLocation;
 import org.eclipse.lsp.cobol.common.message.MessageService;
 import org.eclipse.lsp.cobol.common.message.MessageTemplate;
 import org.eclipse.lsp.cobol.common.model.tree.Node;
 import org.eclipse.lsp.cobol.common.processor.ProcessorDescription;
+import org.eclipse.lsp.cobol.common.utils.ImplicitCodeUtils;
 import org.eclipse.lsp.cobol.core.engine.analysis.AnalysisContext;
 import org.eclipse.lsp.cobol.core.engine.dialects.v2.CobolDialectV2;
 import org.eclipse.lsp.cobol.core.engine.dialects.v2.DialectProcessingService;
@@ -443,5 +447,20 @@ public class DialectService {
       List<CopybookModel> predefinedCopybook = dialect.getPredefinedCopybook(config);
       predefinedCopybook.forEach(model -> predefinedCopybookService.store(model, preprocessor));
     }
+    // Language Environment copybooks any program may copy, whatever its dialects. A copybook with
+    // the same name in the copybook folders takes precedence.
+    for (String name : LANGUAGE_ENVIRONMENT_STAND_INS) {
+      CopybookName copybookName = new CopybookName(name);
+      String uri = ImplicitCodeUtils.createFullUrl(name);
+      predefinedCopybookService.store(
+          new CopybookModel(
+              copybookName.toCopybookId(uri),
+              copybookName,
+              uri,
+              new WorkspaceFileService().readImplicitCode(name)),
+          preprocessor);
+    }
   }
+
+  private static final List<String> LANGUAGE_ENVIRONMENT_STAND_INS = ImmutableList.of("CEEIGZCT");
 }

@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cobolgraph"
-version = "0.1.0"
-description = "Typed COBOL program model over parsebol's `analysis --graph` output"
+name = "mfmap"
+version = "0.4.0"
+description = "Typed COBOL program model over mfmap's `analysis --graph` output"
 readme = "README.md"
 license = { text = "EPL-2.0" }
 requires-python = ">=3.9"
@@ -15,10 +15,10 @@ dependencies = []
 test = ["jsonschema>=4"]
 
 [project.scripts]
-cobolgraph = "cobolgraph.__main__:main"
+mfmap = "mfmap.__main__:main"
 
 [tool.setuptools]
-packages = ["cobolgraph"]
+packages = ["mfmap", "mfmap.resolvers"]
 
 [tool.setuptools.package-data]
-cobolgraph = ["page.html"]
+mfmap = ["page.html", "migration-v1.schema.json", "static/*"]

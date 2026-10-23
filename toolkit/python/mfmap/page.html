@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+Copyright (c) 2026 Amp.
+
+This program and the accompanying materials are made
+available under the terms of the Eclipse Public License 2.0
+which is available at https://www.eclipse.org/legal/epl-2.0/
+
+SPDX-License-Identifier: EPL-2.0
+-->
+<!-- The shell of mfmap serve. Everything else is the app in static/app.js, built from toolkit/web. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mfmap</title>
+<link rel="stylesheet" href="static/app.css">
+</head>
+<body>
+<div id="app"><noscript>mfmap serve needs JavaScript.</noscript></div>
+<script src="static/app.js"></script>
+<script>Mfmap.start(document.getElementById("app"));</script>
+</body>
+</html>

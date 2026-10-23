@@ -10,6 +10,8 @@
  *
  * Contributors:
  *   Broadcom - initial API and implementation
+ *   Amp - accept a constraint name after FOREIGN KEY, and ERASE, PRIQTY and SECQTY without USING
+ *         in CREATE INDEX, as older Db2 for z/OS DDL writes them
  */
 
 parser grammar Db2SqlExecParser;
@@ -427,7 +429,9 @@ dbs_index_create_alter_opts_common: BUFFERPOOL dbs_bp_name
         | gbpcache_specification
         | NOT? CLUSTER
         | NOT? PADDED
-        | COMPRESS yes_or_no;
+        | COMPRESS yes_or_no
+        | ERASE yes_or_no
+        | (PRIQTY | SECQTY) (INTEGERLITERAL | dbs_minus_one);
 partition_using_specification: partition_element (using_specification | free_specification | gbpcache_specification | DSSIZE dbs_dsize_parameter)*;
 using_specification: USING (VCAT dbs_catalog_name | STOGROUP dbs_stogroup_name (PRIQTY (INTEGERLITERAL | dbs_minus_one) | SECQTY (INTEGERLITERAL | dbs_minus_one) | ERASE yes_or_no)*);
 free_specification: FREEPAGE INTEGERLITERAL |  PCTFREE INTEGERLITERAL;
@@ -492,7 +496,7 @@ period_def: PERIOD FOR? ( SYSTEM_TIME LPARENCHAR period_def_params   RPARENCHAR 
             BUSINESS_TIME LPARENCHAR period_def_params (EXCLUSIVE | INCLUSIVE)?  RPARENCHAR);
 period_def_params: dbs_column_name_without_alias dbs_comma_separator dbs_column_name_without_alias;
 unique_constraint: (CONSTRAINT dbs_constraint_name)? (PRIMARY KEY | UNIQUE) LPARENCHAR dbs_column_name_without_alias (dbs_comma_separator dbs_column_name_without_alias)* (dbs_comma_separator BUSINESS_TIME WITHOUT OVERLAPS )? RPARENCHAR;
-referential_constraint: (CONSTRAINT dbs_constraint_name)? FOREIGN KEY LPARENCHAR referential_constraint_body  RPARENCHAR common_reference_clause;
+referential_constraint: (CONSTRAINT dbs_constraint_name)? FOREIGN KEY dbs_constraint_name? LPARENCHAR referential_constraint_body  RPARENCHAR common_reference_clause;
 referential_constraint_body:  dbs_column_name_without_alias (PERIOD BUSINESS_TIME)? (dbs_comma_separator dbs_column_name_without_alias (PERIOD BUSINESS_TIME)?)* ;
 check_constraint: (CONSTRAINT dbs_constraint_name)? CHECK LPARENCHAR  dbs_search_condition RPARENCHAR;
 copy_options: ( (EXCLUDING | INCLUDING) IDENTITY (COLUMN ATTRIBUTES)? | (EXCLUDING | INCLUDING) ROW CHANGE TIMESTAMP (COLUMN ATTRIBUTES)?  |
@@ -1338,7 +1342,7 @@ dbs_lead_function: LEAD dbs_lag_lead_expression;
 dbs_partitioning_expression: dbs_expression;
 dbs_window_partition_clause: PARTITION BY dbs_partitioning_expression (dbs_comma_separator dbs_partitioning_expression)*
 ;
-dbs_sort_key_expression: dbs_column_name (dbs_expression_operator dbs_column_name)* | INTEGERLITERAL;
+dbs_sort_key_expression: INTEGERLITERAL | dbs_expression (dbs_expression_operator dbs_expression)*;
 dbs_window_each_order_clause: dbs_sort_key_expression (ASC (NULLS LAST)? | ASC NULLS FIRST | DESC (NULLS FIRST)? | DESC NULLS LAST )?;
 
 dbs_window_order_clause: ORDER BY dbs_window_each_order_clause (dbs_comma_separator dbs_window_each_order_clause)*;

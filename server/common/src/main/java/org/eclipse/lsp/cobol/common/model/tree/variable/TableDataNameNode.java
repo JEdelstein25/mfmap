@@ -10,12 +10,14 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - keep the whole OCCURS clause on elementary tables
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree.variable;
 
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.lsp.cobol.common.model.Locality;
@@ -28,6 +30,8 @@ import org.eclipse.lsp.cobol.common.model.Locality;
 public class TableDataNameNode extends ElementaryNode {
   private final String value;
   private final int occursTimes;
+  /** The OCCURS clause, with its TO and DEPENDING ON. */
+  @Setter private OccursClause occursClause;
 
   public TableDataNameNode(
       Locality location,

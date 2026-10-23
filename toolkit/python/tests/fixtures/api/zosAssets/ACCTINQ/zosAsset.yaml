@@ -1,0 +1,6 @@
+---
+type: "cicsCommarea-1.0"
+description: "Account inquiry"
+providerProperties:
+  transid: "AINQ"
+  program: "SAMPLE"

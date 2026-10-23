@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - keep where the UNTIL condition is
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree;
@@ -17,6 +18,7 @@ package org.eclipse.lsp.cobol.common.model.tree;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
+import lombok.Setter;
 import org.eclipse.lsp.cobol.common.model.Locality;
 import org.eclipse.lsp.cobol.common.model.NodeType;
 
@@ -25,6 +27,9 @@ import org.eclipse.lsp.cobol.common.model.NodeType;
 @Getter
 @EqualsAndHashCode(callSuper = true)
 public class PerformUntilNode extends Node {
+  /** Where the UNTIL condition is in the source; null for UNTIL EXIT. */
+  @Getter @Setter private Locality conditionLocality;
+
 
   private final boolean untilExit;
 

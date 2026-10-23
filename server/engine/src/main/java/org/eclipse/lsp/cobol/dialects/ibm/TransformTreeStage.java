@@ -10,7 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
- *    Amp - define the DL/I interface block for EXEC DLI programs
+ *    Amp - define the DL/I interface block for EXEC DLI programs; index node positions
  *
  */
 package org.eclipse.lsp.cobol.dialects.ibm;
@@ -36,7 +36,7 @@ import org.eclipse.lsp.cobol.common.pipeline.Stage;
 import org.eclipse.lsp.cobol.common.pipeline.StageResult;
 import org.eclipse.lsp.cobol.common.processor.*;
 import org.eclipse.lsp.cobol.common.symbols.SymbolTable;
-import org.eclipse.lsp.cobol.common.utils.RangeUtils;
+import org.eclipse.lsp.cobol.common.utils.NodePositionIndex;
 import org.eclipse.lsp.cobol.core.CobolParser;
 import org.eclipse.lsp.cobol.core.engine.analysis.AnalysisContext;
 import org.eclipse.lsp.cobol.core.engine.dialects.DialectService;
@@ -94,13 +94,16 @@ public class TransformTreeStage
   }
 
   private void addDialectsNode(AnalysisContext context, Node rootNode) {
+    NodePositionIndex index = new NodePositionIndex();
     for (Node dialectNode : context.getDialectNodes()) {
       Optional<Node> nodeByPosition =
-          RangeUtils.findNodeByPosition(
+          index.find(
               rootNode,
               dialectNode.getLocality().getUri(),
               dialectNode.getLocality().getRange().getStart());
-      addChild(nodeByPosition.orElse(rootNode), dialectNode);
+      Node parent = nodeByPosition.orElse(rootNode);
+      addChild(parent, dialectNode);
+      index.added(parent, dialectNode);
     }
   }
 
@@ -137,6 +140,7 @@ public class TransformTreeStage
   }
 
   private void addCopyNodes(AnalysisContext context, Node rootNode) {
+    NodePositionIndex index = new NodePositionIndex();
     for (Map.Entry<String, Location> copybook :
         context.getCopybooksRepository().getUsages().entries()) {
       String name = copybook.getKey();
@@ -148,11 +152,12 @@ public class TransformTreeStage
               .findFirst()
               .orElse(null);
       Optional<Node> nodeByPosition =
-          RangeUtils.findNodeByPosition(
+          index.find(
               rootNode, statementLocality.getUri(), statementLocality.getRange().getStart());
-      nodeByPosition
-          .orElse(rootNode)
-          .addChild(new CopyNode(statementLocality, copybook.getValue(), name, copybookUri));
+      Node parent = nodeByPosition.orElse(rootNode);
+      CopyNode copyNode = new CopyNode(statementLocality, copybook.getValue(), name, copybookUri);
+      parent.addChild(copyNode);
+      index.added(parent, copyNode);
     }
   }
 
@@ -296,11 +301,13 @@ public class TransformTreeStage
     // Phase TRANSFORMATION
     ProcessingPhase t = ProcessingPhase.TRANSFORMATION;
     ctx.register(t, ProgramIdNode.class, new ProgramIdProcess());
-    ctx.register(t, SectionNode.class, new SectionNodeProcessor(symbolAccumulator));
+    ctx.register(t, SectionNode.class, new SectionNodeProcessor());
     ctx.register(t, FileEntryNode.class, new FileEntryProcess());
-    ctx.register(t, FileDescriptionNode.class, new FileDescriptionProcess(symbolAccumulator));
+    ctx.register(t, FileDescriptionNode.class, new FileDescriptionProcess());
     ctx.register(t, RootNode.class, new RootNodeUpdateCopyNodesByPositionInTree());
     ctx.register(t, ProcedureDivisionReturningNode.class, new ProcedureDivisionReturningProcess());
+    // Parent processors convert definitions before their VariableNode children are visited.
+    ctx.register(t, VariableNode.class, new VariableNodeProcessor(symbolAccumulator));
 
     // Phase DEFINITION
     ProcessingPhase d = ProcessingPhase.DEFINITION;

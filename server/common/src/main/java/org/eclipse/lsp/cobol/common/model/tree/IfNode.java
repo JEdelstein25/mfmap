@@ -10,12 +10,15 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - keep where the IF condition is
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree;
 
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+import lombok.Getter;
+import lombok.Setter;
 import org.eclipse.lsp.cobol.common.model.Locality;
 import org.eclipse.lsp.cobol.common.model.NodeType;
 
@@ -23,6 +26,9 @@ import org.eclipse.lsp.cobol.common.model.NodeType;
 @ToString(callSuper = true)
 @EqualsAndHashCode(callSuper = true)
 public class IfNode extends Node {
+  /** Where the condition is in the source. */
+  @Getter @Setter private Locality conditionLocality;
+
 
   public IfNode(Locality location) {
     super(location, NodeType.IF);

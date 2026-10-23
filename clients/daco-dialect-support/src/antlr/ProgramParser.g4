@@ -27,7 +27,7 @@ startRule
    ;
 
 dataDivision
-   : DATA_DIVISION DOT_FS skipUntilFirstSection dataSection*
+   : DATA_DIVISION DOT_FS dataSection*
    ;
 
 procedureDivision
@@ -61,18 +61,24 @@ skipUntilDataDivision
    : (~(DATA_DIVISION | PROCEDURE))*
    ;
 
-skipUntilFirstSection
-   : (~(FILE | WORKING_STORAGE | LINKAGE))*
-   ;
-
 dataSection
    : FILE SECTION DOT_FS dataDescriptionEntry*
    | WORKING_STORAGE SECTION DOT_FS dataDescriptionEntry*
    | LINKAGE SECTION DOT_FS dataDescriptionEntry*
+   | otherDialectSection
+   ;
+
+// Sections owned by other dialects (e.g. IDMS SCHEMA SECTION, MAP SECTION) can appear anywhere
+otherDialectSection
+   : sectionName SECTION DOT_FS skipUntilNextSection
+   ;
+
+skipUntilNextSection
+   : .*?
    ;
 
 dataDescriptionEntry
-   : copyMaid | variableEntry | variableEntrySpecificLevel | otherDialectCopy | skipFileDescriptor
+   : copyMaid | variableEntry | variableEntrySpecificLevel | otherDialectCopy | skipFileDescriptor | skipExecBlock | unknownDataEntry
    ;
 
 skipFileDescriptor
@@ -80,7 +86,23 @@ skipFileDescriptor
    ;
 
 otherDialectCopy
-   : LEVEL_NUMBER COPY ~(MAID | DOT_FS) (~DOT_FS)* DOT_FS
+   : LEVEL_NUMBER? COPY ~(MAID | DOT_FS) (~DOT_FS)* DOT_FS
+   ;
+
+// Embedded statements can end without a period. Resume parsing at END-EXEC
+// so a following COPY, data entry, or section is not consumed with the block.
+skipExecBlock
+   : EXEC (~END_EXEC)* END_EXEC DOT_FS?
+   ;
+
+// Leave data entries owned by COBOL or another dialect to their own parser.
+// Do not consume a following <name> SECTION header as a data entry.
+// Stop at the next period so subsequent MAID entries can still be collected.
+unknownDataEntry
+   : ~(LEVEL_NUMBER | LEVEL_NUMBER_66 | LEVEL_NUMBER_77 | LEVEL_NUMBER_88
+       | PROCEDURE | DATA_DIVISION | FILE | WORKING_STORAGE | LINKAGE
+       | COPY | EXEC | FD | SD | DOT_FS)
+     (~(SECTION | DOT_FS) (~DOT_FS)*)? DOT_FS
    ;
 
 copyMaid

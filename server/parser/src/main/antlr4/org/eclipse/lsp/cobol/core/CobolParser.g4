@@ -18,7 +18,7 @@ options {tokenVocab = CobolLexer; superClass = MessageServiceParser;}
 
     while (--index >= 0) {
       final Token prev = stream.get(index);
-      if (prev.getType() == CobolLexer.UNKNOWN_EXEC)
+      if (prev.getType() == CobolLexer.UNKNOWN_EXEC || prev.getType() == CobolLexer.EXEC_DLI)
         return;
       final int prevType = prev.getType();
       if (prevType != CobolLexer.WS && prevType != CobolLexer.NEWLINE)
@@ -1011,7 +1011,7 @@ acceptStatement
    ;
 
 dialectStatement
-   : ZERO_WIDTH_SPACE | dialectIfStatment
+   : ZERO_WIDTH_SPACE | dialectIfStatment | EXEC_DLI
    ;
 
 acceptFromDateStatement

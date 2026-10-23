@@ -10,17 +10,23 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - keep where the WHEN condition is
  *
  */
 package org.eclipse.lsp.cobol.common.model.tree;
 
 import lombok.ToString;
+import lombok.Getter;
+import lombok.Setter;
 import org.eclipse.lsp.cobol.common.model.Locality;
 import org.eclipse.lsp.cobol.common.model.NodeType;
 
 /** The class represents evaluateWhen in COBOL. */
 @ToString(callSuper = true)
 public class EvaluateWhenNode extends Node {
+  /** Where what follows WHEN, including ALSO objects, is in the source. */
+  @Getter @Setter private Locality conditionLocality;
+
   public EvaluateWhenNode(Locality location) {
     super(location, NodeType.EVALUATE_WHEN);
   }

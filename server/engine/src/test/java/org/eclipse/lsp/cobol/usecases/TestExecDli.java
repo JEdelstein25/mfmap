@@ -75,6 +75,38 @@ class TestExecDli {
   }
 
   @Test
+  void dliIsTheOnlyStatementInABranch() {
+    String text =
+        "       IDENTIFICATION DIVISION.\n"
+            + "       PROGRAM-ID. DLIIF.\n"
+            + "       DATA DIVISION.\n"
+            + "       WORKING-STORAGE SECTION.\n"
+            + "       01 {$*WS-FLAG} PIC X.\n"
+            + "          88 {$*FOUND-SEG} VALUE 'Y'.\n"
+            + "       01 {$*SUMREC} PIC X(10).\n"
+            + "       PROCEDURE DIVISION.\n"
+            + "           IF {$FOUND-SEG}\n"
+            + "              EXEC DLI REPL SEGMENT (PAUTSUM0) FROM ({$SUMREC})\n"
+            + "              END-EXEC\n"
+            + "           ELSE\n"
+            + "              EXEC DLI ISRT SEGMENT (PAUTSUM0) FROM ({$SUMREC})\n"
+            + "              END-EXEC\n"
+            + "           END-IF\n"
+            + "           IF {$FOUND-SEG}\n"
+            + "              EXEC DLI TERM END-EXEC\n"
+            + "           END-IF\n"
+            + "           GOBACK.\n";
+    List<String> commands =
+        UseCaseEngine.runTest(text, ImmutableList.of(), ImmutableMap.of())
+            .getRootNode()
+            .getDepthFirstStream()
+            .filter(ExecDliNode.class::isInstance)
+            .map(n -> ((ExecDliNode) n).getCommand())
+            .collect(Collectors.toList());
+    assertEquals(ImmutableList.of("REPL", "ISRT", "TERM"), commands);
+  }
+
+  @Test
   void malformedDliRemainsUnknown() {
     String text =
         "       IDENTIFICATION DIVISION.\n"

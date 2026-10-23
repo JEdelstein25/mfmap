@@ -10,6 +10,7 @@
  *
  * Contributors:
  *    Broadcom - initial API and implementation
+ *    Amp - share getCandidate with NodePositionIndex
  *
  */
 
@@ -56,7 +57,7 @@ public class RangeUtils {
     return candidate == null ? Optional.empty() : Optional.of(candidate);
   }
 
-  private static Node getCandidate(String uri, Node child, Node candidate) {
+  static Node getCandidate(String uri, Node child, Node candidate) {
     if (candidate == null) {
       candidate = child;
     } else if (child.getLocality().getUri().equals(uri)

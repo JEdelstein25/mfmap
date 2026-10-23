@@ -9,6 +9,8 @@
  *
  * Contributors:
  *    Amp - test embedded statement resource metadata
+ *    Amp - test SQL columns, values, INTO host variables and WHERE condition
+ *    Amp - test that SQL syntax keeps columns, predicates and host variable roles
  */
 package org.eclipse.lsp.cobol.usecases;
 
@@ -17,9 +19,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
+import org.eclipse.lsp.cobol.common.model.tree.Syntax;
 import org.eclipse.lsp.cobol.implicitDialects.cics.CICSLexer;
 import org.eclipse.lsp.cobol.implicitDialects.cics.CICSParser;
 import org.eclipse.lsp.cobol.implicitDialects.cics.nodes.ExecCicsNode;
@@ -85,6 +92,123 @@ class TestExecResourceMetadata {
     assertEquals("C1", cursor.getCursorName());
     assertEquals(Arrays.asList("CARDDEMO.TRANSACTION_TYPE"), cursor.getTables());
     assertTrue(new Gson().toJson(cursor).contains("\"cursorName\":\"C1\""));
+  }
+
+  @Test
+  void storedProcedureCallsAndDynamicSql() {
+    ExecSqlNode call = sql("CALL PAYROLL.CALC_PAY(:EMP-ID, :PAY-AMT)");
+    assertEquals("CALL", call.getStatementType());
+    assertEquals("PAYROLL.CALC_PAY", call.getProcedureName());
+    assertEquals(":PROC-NAME", sql("CALL :PROC-NAME").getProcedureName());
+
+    ExecSqlNode prepare = sql("PREPARE S1 FROM :WS-STMT");
+    assertEquals("PREPARE", prepare.getStatementType());
+    assertEquals("S1", prepare.getStatementName());
+    assertEquals(":WS-STMT", prepare.getSqlSource());
+    assertEquals("S1", sql("EXECUTE S1 USING :WS-ID").getStatementName());
+    ExecSqlNode cursor = sql("DECLARE C2 CURSOR FOR S1");
+    assertEquals("DECLARE CURSOR", cursor.getStatementType());
+    assertEquals("S1", cursor.getStatementName());
+    assertNull(sql("DECLARE C3 CURSOR FOR SELECT ID FROM T1").getStatementName());
+
+    ExecSqlNode immediate = sql("EXECUTE IMMEDIATE :WS-STMT");
+    assertEquals("EXECUTE IMMEDIATE", immediate.getStatementType());
+    assertEquals(":WS-STMT", immediate.getSqlSource());
+    ExecSqlNode literal = sql("EXECUTE IMMEDIATE 'DELETE FROM OLD.AUDIT WHERE ID = 1'");
+    assertEquals("'DELETE FROM OLD.AUDIT WHERE ID = 1'", literal.getSqlSource());
+    assertTrue(new Gson().toJson(call).contains("\"procedureName\":\"PAYROLL.CALC_PAY\""));
+  }
+
+  @Test
+  void sqlColumnsValuesIntoAndWhere() {
+    ExecSqlNode insert =
+        sql("INSERT INTO PATIENT ( PATIENTID, USERNAME, DOB )\n"
+            + "       VALUES ( DEFAULT, :CA-USERID, CURRENT DATE - 1 DAY )");
+    assertEquals(Arrays.asList("PATIENTID", "USERNAME", "DOB"), insert.getColumns());
+    assertEquals(Arrays.asList("DEFAULT", ":CA-USERID", "CURRENT DATE - 1 DAY"), insert.getValues());
+    assertNull(insert.getWhere());
+    assertEquals(Arrays.asList(":X"), sql("INSERT INTO T (A) VALUES (:X)").getValues());
+    assertEquals(
+        Arrays.asList("(:X) + (:Y)"), sql("INSERT INTO T (A) VALUES ((:X) + (:Y))").getValues());
+
+    ExecSqlNode select =
+        sql("SELECT FIRSTNAME, (SELECT MAX(X) FROM T2 WHERE T2.ID = P.ID) AS M\n"
+            + "  INTO :CA-FIRST-NAME, :WS-MAX FROM PATIENT P\n"
+            + "  WHERE PATIENTID = :DB2-PATIENT-ID AND EXISTS (SELECT 1 FROM T3 WHERE T3.A = 1)");
+    assertEquals(
+        Arrays.asList("FIRSTNAME", "(SELECT MAX(X) FROM T2 WHERE T2.ID = P.ID) AS M"),
+        select.getColumns());
+    assertEquals(Arrays.asList(":CA-FIRST-NAME", ":WS-MAX"), select.getInto());
+    assertEquals(
+        "PATIENTID = :DB2-PATIENT-ID AND EXISTS (SELECT 1 FROM T3 WHERE T3.A = 1)",
+        select.getWhere());
+
+    ExecSqlNode cursor =
+        sql("DECLARE C CURSOR FOR SELECT ID, NAME FROM MEDICATION WHERE PATIENTID = :PID");
+    assertEquals(Arrays.asList("ID", "NAME"), cursor.getColumns());
+    assertEquals("PATIENTID = :PID", cursor.getWhere());
+    assertEquals(Arrays.asList(":ID", ":NAME"), sql("FETCH C INTO :ID, :NAME").getInto());
+
+    ExecSqlNode set = sql("SET :DB2-PATIENT-ID = IDENTITY_VAL_LOCAL()");
+    assertEquals(Arrays.asList(":DB2-PATIENT-ID"), set.getInto());
+    assertEquals(Arrays.asList("IDENTITY_VAL_LOCAL()"), set.getValues());
+
+    ExecSqlNode update = sql("UPDATE T SET A = :X, B = DEFAULT WHERE ID = :ID");
+    assertEquals(Arrays.asList("A", "B"), update.getColumns());
+    assertEquals(Arrays.asList(":X", "DEFAULT"), update.getValues());
+    assertEquals("ID = :ID", update.getWhere());
+    assertTrue(new Gson().toJson(update).contains("\"where\":\"ID \\u003d :ID\""));
+
+    ExecSqlNode ordered =
+        sql("DECLARE C2 CURSOR FOR SELECT ID FROM T WHERE ID IN (SELECT ID FROM U ORDER BY ID)"
+            + " ORDER BY NAME DESC, ID FETCH FIRST 10 ROWS ONLY");
+    assertEquals("NAME DESC, ID", ordered.getOrderBy());
+    assertEquals("FETCH FIRST 10 ROWS ONLY", ordered.getFetchFirst());
+
+    ExecSqlNode declared =
+        sql("DECLARE ACCOUNT TABLE ( ACCT_ID CHAR(11) NOT NULL,\n"
+            + "  BALANCE DECIMAL(12, 2), OPENED DATE NOT NULL WITH DEFAULT )");
+    assertEquals(
+        Arrays.asList("ACCT_ID CHAR(11) NOT NULL", "BALANCE DECIMAL(12, 2)", "OPENED DATE NOT NULL WITH DEFAULT"),
+        declared.getTableColumns());
+  }
+
+  @Test
+  void sqlSyntaxKeepsColumnsPredicatesAndHostVariableRoles() {
+    ExecSqlNode select =
+        sql(
+            "SELECT TR_TYPE, TR_DESCRIPTION INTO :WS-TYPE, :WS-DESC FROM CARDDEMO.TRANSACTION_TYPE"
+                + " WHERE TR_TYPE >= :WS-KEY ORDER BY TR_TYPE DESC FETCH FIRST 1 ROW ONLY");
+    List<String> tokens = new ArrayList<>();
+    Map<String, String> roles = new HashMap<>();
+    walk(select.getSyntax(), "", tokens, roles);
+    assertEquals(
+        "SELECT TR_TYPE , TR_DESCRIPTION INTO : WS-TYPE , : WS-DESC FROM CARDDEMO . TRANSACTION_TYPE"
+            + " WHERE TR_TYPE >= : WS-KEY ORDER BY TR_TYPE DESC FETCH FIRST 1 ROW ONLY",
+        String.join(" ", tokens));
+    assertTrue(roles.get("WS-TYPE").contains("/target_variable_names_loop/"), roles.get("WS-TYPE"));
+    assertTrue(roles.get("WS-DESC").contains("/target_variable_names_loop/"), roles.get("WS-DESC"));
+    assertFalse(roles.get("WS-KEY").contains("/target_variable_names_loop/"), roles.get("WS-KEY"));
+    assertTrue(roles.get("WS-KEY").contains("/dbs_where_clause/"), roles.get("WS-KEY"));
+    assertTrue(roles.get("DESC").endsWith("/dbs_orderby_clause"), roles.get("DESC"));
+  }
+
+  /** Collects every token in order, and for each the rules it is nested in. */
+  private static void walk(
+      Syntax syntax, String path, List<String> tokens, Map<String, String> roles) {
+    String here = path + "/" + syntax.getRule() + (syntax.getKind() == null ? "" : "~" + syntax.getKind());
+    if (syntax.getText() != null) {
+      tokens.add(syntax.getText().trim());
+      roles.put(syntax.getText().trim(), here);
+      return;
+    }
+    for (Object item : syntax.getItems()) {
+      if (item instanceof Syntax) walk((Syntax) item, here, tokens, roles);
+      else {
+        tokens.add(((String) item).trim());
+        roles.put(((String) item).trim(), here);
+      }
+    }
   }
 
   private ExecSqlNode sql(String source) {
